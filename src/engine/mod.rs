@@ -32,11 +32,17 @@ impl VisualizationEngine {
             .puzzle
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-
-        if puzzle.current_step < puzzle.steps.len() {
-            let step = &puzzle.steps[puzzle.current_step];
-            puzzle.state.apply_step(step.as_ref())?;
-            puzzle.current_step += 1;
+        let current = puzzle
+            .current
+            .as_mut()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        if current.step < part.steps.len() {
+            let step = &part.steps[current.step];
+            current.state.apply_step(step.as_ref())?;
+            current.step += 1;
             Ok(())
         } else {
             Err(VisualizationError::AlreadyAtEnd)
@@ -49,11 +55,17 @@ impl VisualizationEngine {
             .puzzle
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-
-        if puzzle.current_step > 0 {
-            let target_step = puzzle.current_step - 1;
-            puzzle.state.seek_to_step(target_step, &puzzle.steps)?;
-            puzzle.current_step = target_step;
+        let current = puzzle
+            .current
+            .as_mut()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        if current.step > 0 {
+            let target_step = current.step - 1;
+            current.state.seek_to_step(target_step, &part.steps)?;
+            current.step = target_step;
             Ok(())
         } else {
             Err(VisualizationError::AlreadyAtBeginning)
@@ -66,10 +78,16 @@ impl VisualizationEngine {
             .puzzle
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-
-        if step_index <= puzzle.steps.len() {
-            puzzle.state.seek_to_step(step_index, &puzzle.steps)?;
-            puzzle.current_step = step_index;
+        let current = puzzle
+            .current
+            .as_mut()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        if step_index <= part.steps.len() {
+            current.state.seek_to_step(step_index, &part.steps)?;
+            current.step = step_index;
             Ok(())
         } else {
             Err(VisualizationError::InvalidStepIndex(step_index))
@@ -82,9 +100,12 @@ impl VisualizationEngine {
             .puzzle
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-
-        puzzle.state.reset_to_initial();
-        puzzle.current_step = 0;
+        let current = puzzle
+            .current
+            .as_mut()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        current.state.reset_to_initial();
+        current.step = 0;
         Ok(())
     }
 
@@ -106,7 +127,14 @@ impl VisualizationEngine {
             .puzzle
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-        Ok(puzzle.current_step < puzzle.steps.len())
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        Ok(current.step < part.steps.len())
     }
 
     /// Check if we can step backward
@@ -115,7 +143,12 @@ impl VisualizationEngine {
             .puzzle
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-        Ok(puzzle.current_step > 0)
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+
+        Ok(current.step > 0)
     }
 
     /// Get current step information
@@ -124,7 +157,15 @@ impl VisualizationEngine {
             .puzzle
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
-        Ok((puzzle.current_step, puzzle.steps.len()))
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+
+        Ok((current.step, part.steps.len()))
     }
 
     /// Get description of current step (if any)
@@ -133,9 +174,16 @@ impl VisualizationEngine {
             .puzzle
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
 
-        if puzzle.current_step > 0 && puzzle.current_step <= puzzle.steps.len() {
-            let step = &puzzle.steps[puzzle.current_step - 1];
+        if current.step < part.steps.len() {
+            let step = &part.steps[current.step];
             Ok(Some(step.description()))
         } else {
             Ok(None)
@@ -150,47 +198,59 @@ impl VisualizationEngine {
     pub fn load_puzzle(
         &mut self,
         puzzle: PuzzleInstance,
-        registry: &RendererRegistry,
+        _registry: &RendererRegistry, //TODO: fix this. The logic has changed ! This should be
+                                      //handled somewhere else
+                                      //
     ) -> Result<(), VisualizationError> {
         // Check if current renderer is compatible
-        if let Some(current_renderer) = &self.active_renderer {
-            if current_renderer.step_type_id() != puzzle.step_type_id {
-                // Auto-switch to compatible renderer
-                if let Some(new_renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id)
-                {
-                    self.active_renderer = Some(new_renderer);
-                } else {
-                    return Err(VisualizationError::NoCompatibleRenderer(
-                        puzzle.step_type_id,
-                    ));
-                }
-            }
-        } else {
-            // No renderer selected, try to auto-select
-            if let Some(renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id) {
-                self.active_renderer = Some(renderer);
-            } else {
-                return Err(VisualizationError::NoCompatibleRenderer(
-                    puzzle.step_type_id,
-                ));
-            }
-        }
-
+        // if let Some(current_renderer) = &self.active_renderer {
+        //     if current_renderer.step_type_id() != puzzle.step_type_id {
+        //         // Auto-switch to compatible renderer
+        //         if let Some(new_renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id)
+        //         {
+        //             self.active_renderer = Some(new_renderer);
+        //         } else {
+        //             return Err(VisualizationError::NoCompatibleRenderer(
+        //                 puzzle.step_type_id,
+        //             ));
+        //         }
+        //     }
+        // } else {
+        //     // No renderer selected, try to auto-select
+        //     if let Some(renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id) {
+        //         self.active_renderer = Some(renderer);
+        //     } else {
+        //         return Err(VisualizationError::NoCompatibleRenderer(
+        //             puzzle.step_type_id,
+        //         ));
+        //     }
+        // }
+        //
+        self.active_renderer = None;
         self.puzzle = Some(puzzle);
         Ok(())
     }
 
     /// Switch renderer (assumes registry provided compatible renderer)
-    pub fn set_renderer(&mut self, renderer: Box<dyn RendererProxy>) {
+    pub fn set_renderer(
+        &mut self,
+        renderer: Box<dyn RendererProxy>,
+    ) -> Result<(), VisualizationError> {
         if let Some(puzzle) = &self.puzzle {
+            let step_type = puzzle
+                .current_part()
+                .ok_or(VisualizationError::NoPartLoaded)?
+                // .expect("A renderer was set without a part selected. This is an engine failure.")
+                .step_type_id;
             assert_eq!(
                 renderer.step_type_id(),
-                puzzle.step_type_id,
+                step_type,
                 "Registry provided incompatible renderer: expected {}, got {}",
-                puzzle.step_type_id,
+                step_type,
                 renderer.step_type_id()
             );
             self.active_renderer = Some(renderer);
+            Ok(())
         } else {
             panic!("Cannot set renderer without loaded puzzle - this indicates a bug in the application logic");
         }
@@ -210,11 +270,17 @@ impl VisualizationEngine {
             .active_renderer
             .as_mut()
             .ok_or(VisualizationError::NoRendererSelected)?;
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let snapshot = current.state.create_snapshot();
 
-        let snapshot = puzzle.state.create_snapshot();
-
-        if puzzle.current_step < puzzle.steps.len() {
-            let current_step = &puzzle.steps[puzzle.current_step];
+        if current.step < part.steps.len() {
+            let current_step = &part.steps[current.step];
             renderer.render_step_erased(current_step.as_ref(), snapshot.as_ref(), context);
         } else {
             renderer.render_state_erased(snapshot.as_ref(), context);

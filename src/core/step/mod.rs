@@ -3,9 +3,12 @@
 // ============================================================================
 
 use std::any::Any;
-
+use std::fmt::Debug;
 /// Represents a single modification that can be applied to visualization state
-pub trait StepAction: Send + 'static {
+pub trait StepAction: Send + 'static
+where
+    Self: Debug,
+{
     /// For debugging and logging
     fn description(&self) -> String;
 

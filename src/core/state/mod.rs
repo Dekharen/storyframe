@@ -1,5 +1,6 @@
 use crate::{core::step::StepAction, error::StepError};
 use snapshot::StateSnapshot;
+use std::fmt::Debug;
 
 pub mod snapshot;
 // ============================================================================
@@ -7,7 +8,10 @@ pub mod snapshot;
 // ============================================================================
 
 /// Manages the current state of a visualization that can be modified by steps
-pub trait VisualizationState: Send + 'static {
+pub trait VisualizationState: Send + 'static
+where
+    Self: Debug,
+{
     /// Apply a single step to modify the state
     fn apply_step(&mut self, step: &dyn StepAction) -> Result<(), StepError>;
 

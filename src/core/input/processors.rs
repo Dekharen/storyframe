@@ -1,59 +1,163 @@
 // use std::str::pattern::Pattern;
 
-use std::string::ParseError;
+use std::collections::HashMap;
 
-use crate::puzzle::PuzzleMetadata;
+use crate::{
+    domains::step_type_to_id,
+    error::ParseError,
+    puzzle::{PartInfo, PuzzleMetadata},
+};
 
 // pub description: Option<String>,
 // pub author: Option<String>,
 // pub difficulty: Option<u8>,
 //
-const COMMENT_SIGN: &str = "#";
-//let (metadata, step_type_id, input_data) =
-pub fn parse_puzzle_format(
-    raw_content: &str,
-) -> Result<(PuzzleMetadata, &'static str, &str), ParseError> {
-    let mut metadata = PuzzleMetadata::default();
-    for input_line in raw_content.lines() {
-        match input_line {
-            "\n" | "\r\n" => {
-                continue;
-            }
-            mut line => {
-                line = line.trim();
-                if line.starts_with(COMMENT_SIGN) {
-                    continue;
-                };
-                if let Some(description) = parse_line_var(line, "description:") {
-                    if metadata.description.is_some() {
-                        panic!("Duplicate input (should be error)");
-                    }
-                    metadata.description = Some(description.to_string());
-                }
-                if let Some(author) = parse_line_var(line, "author:") {
-                    if metadata.author.is_some() {
-                        panic!("Duplicate input (should be error)");
-                    }
-                    metadata.author = Some(author.to_string());
-                }
-
-                if let Some(difficulty) = parse_line_var(line, "difficulty:") {
-                    if metadata.difficulty.is_some() {
-                        panic!("Duplicate input (should be error)");
-                    }
-
-                    metadata.difficulty = Some(
-                        difficulty
-                            .parse::<u8>()
-                            .expect("failed parsing for difficulty"),
-                    );
-                }
-            }
-        };
-    }
-    todo!()
+#[derive(Debug, Clone, PartialEq)]
+pub enum Field {
+    Leaf(String),                 // Terminal value: "Hello World"
+    Node(HashMap<String, Field>), // Nested fields
 }
 
-fn parse_line_var<'a>(line: &'a str, tag: &'static str) -> Option<&'a str> {
-    return line.strip_prefix(tag);
+impl Field {
+    /// Parse a path like part.tokenize.name under the form "[part, tokenize, name}"
+    pub fn get_path(&self, path: &[&str]) -> Option<&Field> {
+        match (self, path) {
+            (Field::Leaf(_), []) => Some(self),
+            (Field::Leaf(_), _) => None, // Can't traverse into leaf
+            (Field::Node(_), []) => Some(self),
+            (Field::Node(map), [head, tail @ ..]) => map.get(*head)?.get_path(tail),
+        }
+    }
+
+    /// Get leaf value if this is a leaf
+    pub fn as_leaf(&self) -> Option<&str> {
+        match self {
+            Field::Leaf(value) => Some(value),
+            Field::Node(_) => None,
+        }
+    }
+
+    /// Set a value at a dotted path
+    pub fn set_path(&mut self, path: &[&str], value: String) {
+        match (self, path) {
+            (_, []) => (), // Invalid: empty path
+            (field @ Field::Leaf(_), [_single]) => {
+                *field = Field::Leaf(value);
+            }
+            (Field::Node(map), [single]) => {
+                map.insert(single.to_string(), Field::Leaf(value));
+            }
+            (field @ Field::Leaf(_), path) => {
+                // Convert leaf to node to accommodate nested path
+                *field = Field::Node(HashMap::new());
+                field.set_path(path, value);
+            }
+            (Field::Node(map), [head, tail @ ..]) => {
+                let entry = map
+                    .entry(head.to_string())
+                    .or_insert_with(|| Field::Node(HashMap::new()));
+                entry.set_path(tail, value);
+            }
+        }
+    }
+}
+const COMMENT_SIGN: char = '#';
+/// Entry point for the parser, once transformed into string.
+pub fn parse_puzzle_format(
+    content: &str,
+) -> Result<(PuzzleMetadata, Vec<(PartInfo, String)>), ParseError> {
+    let mut root = Field::Node(HashMap::new());
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(COMMENT_SIGN) {
+            continue;
+        }
+
+        if let Some((key_path, value)) = line.split_once(':') {
+            let path: Vec<&str> = key_path.split('.').map(|s| s.trim()).collect();
+            root.set_path(&path, value.trim().to_string());
+        }
+    }
+
+    // Extract structured data
+    let metadata = extract_metadata(&root)?;
+    let parts = extract_parts_with_steps(&root)?;
+
+    Ok((metadata, parts))
+}
+
+fn extract_metadata(root: &Field) -> Result<PuzzleMetadata, ParseError> {
+    let mut metadata = PuzzleMetadata::default();
+
+    if let Some(title) = root.get_path(&["title"]).and_then(|f| f.as_leaf()) {
+        metadata.title = title.to_string();
+    }
+
+    if let Some(author) = root.get_path(&["author"]).and_then(|f| f.as_leaf()) {
+        metadata.author = Some(author.to_string());
+    }
+
+    if let Some(difficulty_str) = root.get_path(&["difficulty"]).and_then(|f| f.as_leaf()) {
+        metadata.difficulty = difficulty_str.parse().ok();
+    }
+
+    Ok(metadata)
+}
+fn extract_parts_with_steps(root: &Field) -> Result<Vec<(PartInfo, String)>, ParseError> {
+    let mut parts = Vec::new();
+
+    if let Some(Field::Node(part_map)) = root.get_path(&["part"]) {
+        for (part_id, part_field) in part_map {
+            let (part_info, input_data) = extract_single_part_with_steps(part_id, part_field)?;
+            parts.push((part_info, input_data));
+        }
+    }
+
+    Ok(parts)
+}
+
+fn extract_single_part_with_steps(
+    part_id: &str,
+    part_field: &Field,
+) -> Result<(PartInfo, String), ParseError> {
+    let Field::Node(fields) = part_field else {
+        return Err(ParseError::InvalidPartStructure(part_id.to_string()));
+    };
+
+    let name = fields
+        .get("name")
+        .and_then(|f| f.as_leaf())
+        .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "name"))?;
+
+    let step_type = fields
+        .get("step_type")
+        .and_then(|f| f.as_leaf())
+        .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "step_type"))?;
+
+    let input_data = fields
+        .get("input")
+        .and_then(|f| f.as_leaf())
+        .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "input"))?
+        .to_string();
+
+    let steps_str = fields
+        .get("steps")
+        .and_then(|f| f.as_leaf())
+        .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "steps"))?;
+
+    // Create PartInfo without steps (they'll be parsed later with proper input context)
+    let part_info = PartInfo {
+        id: part_id.to_string(),
+        display_name: name.to_string(),
+        description: fields
+            .get("description")
+            .and_then(|f| f.as_leaf())
+            .map(String::from),
+        input_data,        // Store in PartInfo too for easy access
+        steps: Vec::new(), // Will be populated later
+        step_type_id: step_type_to_id(step_type)?,
+    };
+
+    Ok((part_info, steps_str.to_string()))
 }

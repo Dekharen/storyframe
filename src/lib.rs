@@ -4,6 +4,7 @@ pub mod core {
     pub mod state;
     pub mod step;
 }
+pub mod domains;
 pub mod engine;
 // pub mod engine;
 pub mod error;

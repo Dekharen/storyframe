@@ -2,7 +2,7 @@ use crate::core::state::VisualizationState;
 use crate::core::step::StepAction;
 use crate::error::ParseError;
 
-mod processors;
+pub mod processors;
 // ============================================================================
 // INPUT PROCESSING
 // ============================================================================

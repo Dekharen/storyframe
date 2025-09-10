@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, write},
-    string::FromUtf8Error,
-};
+use std::{fmt, string::FromUtf8Error};
 
 // ============================================================================
 // ERROR TYPES
@@ -12,15 +9,52 @@ pub enum ParseError {
     InvalidFormat(String),
     IoError(std::io::Error),
     FromUtf8Error(FromUtf8Error),
+    InvalidPartStructure(String),
+    MissingPartField(String, &'static str),
+    ConflictingFieldTypes {
+        path: String,
+        existing_type: &'static str,
+        attempted_type: &'static str,
+        existing_value: String,
+    },
+    UnknownStepType(String),
+    EmptyPath,
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ParseError::ConflictingFieldTypes {
+                path,
+                existing_type,
+                attempted_type,
+                existing_value,
+            } => {
+                write!(
+                    f,
+                    "Field '{}' is already set as {} with value '{}', cannot use as {}",
+                    path, existing_type, existing_value, attempted_type
+                )
+            }
+            ParseError::EmptyPath => write!(f, "Cannot set value with empty path"),
             ParseError::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
             ParseError::IoError(err) => write!(f, "IO error: {}", err),
             ParseError::FromUtf8Error(err) => {
                 write!(f, "Parse error, non-valid utf8 passed : {}", err)
+            }
+            ParseError::InvalidPartStructure(part) => {
+                write!(f, "Part is not a properly structured node : {}", part)
+            }
+            ParseError::MissingPartField(part_name, missing_key) => {
+                write!(f, "Part {part_name} is missing the key : {missing_key}")
+            }
+            ParseError::UnknownStepType(step_type) => {
+                write!(
+                    f,
+                    "Unknown step type '{}'. Supported types: {:?}",
+                    step_type,
+                    crate::domains::supported_step_types()
+                )
             }
         }
     }
@@ -29,9 +63,9 @@ impl fmt::Display for ParseError {
 impl std::error::Error for ParseError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            ParseError::InvalidFormat(_) => None,
             ParseError::IoError(err) => Some(err),
             ParseError::FromUtf8Error(err) => Some(err),
+            _ => None,
         }
     }
 }
@@ -117,6 +151,7 @@ impl std::error::Error for RenderError {}
 #[derive(Debug)]
 pub enum VisualizationError {
     NoPuzzleLoaded,
+    NoPartLoaded,
     NoRendererSelected,
     IncompatibleRenderer,
     RenderError(RenderError),
@@ -130,6 +165,7 @@ pub enum VisualizationError {
 impl fmt::Display for VisualizationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            VisualizationError::NoPartLoaded => write!(f, "No part loaded"),
             VisualizationError::NoPuzzleLoaded => write!(f, "No puzzle loaded"),
             VisualizationError::NoRendererSelected => write!(f, "No renderer selected"),
             VisualizationError::IncompatibleRenderer => {

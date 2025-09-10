@@ -1,0 +1,17 @@
+# Metadata
+author:Dekharen
+description:Hello, World !
+title: Test Puzzle
+
+# Nested syntax using dots
+
+part.tokenize.name: Character Tokenization
+part.tokenize.step_type: text_step
+part.tokenize.input: hello world
+part.tokenize.steps: some_steps_here
+
+part.parse.name: Parse Tree Building  
+part.parse.step_type: graph_step
+part.parse.input: ["hello", "world"]
+part.tokenize.steps: some_steps_here
+part.parse.steps: other_steps_type
