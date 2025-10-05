@@ -1,15 +1,17 @@
 use crate::{
-    core::input::processors::parse_puzzle_format,
-    core::input::RawInput,
-    core::state::VisualizationState,
-    core::step::StepAction,
-    error::{ParseError, PuzzleError, SolveError},
+    core::{
+        input::{processors::parse_puzzle_format, read_source_content},
+        state::{StateInfo, StateProxy},
+        step::StepAction,
+    },
+    domains::DomainRegistry,
+    error::{ParseError, SolveError},
 };
 use std::path::PathBuf;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 /// Metadata about a puzzle and its parts
-pub struct PuzzleMetadata {
+pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
     pub author: Option<String>,
@@ -18,15 +20,43 @@ pub struct PuzzleMetadata {
 
 #[derive(Debug)]
 /// Information about a solvable part of a puzzle
-pub struct PartInfo {
+pub struct RawPartMetadata {
     pub id: String,
     pub display_name: String,
     pub description: Option<String>,
-    pub steps: Vec<Box<dyn StepAction>>,
+    pub raw_steps_string: String,
     // this is maybe the wrong type, as in it should already be
     // transformed into a step-related state but we'll see. Like, maybe a Box<dyn VisualizationState>
     // that is the initial state
     pub input_data: String,
+    pub raw_step_type_id: String,
+}
+pub fn parse_part_info(
+    part: RawPartMetadata,
+    registry: &DomainRegistry,
+) -> Result<PartInfo, ParseError> {
+    let step_type_id: &'static str = registry.step_type_to_id(&part.raw_step_type_id)?;
+    Ok(PartInfo {
+        step_type_id,
+        steps: registry.parse_steps(step_type_id, &part.raw_steps_string)?,
+        id: part.id,
+        display_name: part.display_name,
+        description: part.description,
+        input_data: part.input_data,
+    })
+}
+
+#[derive(Debug)]
+/// Information about a solvable part of a puzzle
+pub struct PartInfo {
+    pub id: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub(crate) steps: Vec<Box<dyn StepAction>>,
+    // this is maybe the wrong type, but for different reasons than before, because we might need
+    // some type markings to make sure a single string type can transfer to multiple types of
+    // states. Oh well
+    pub(crate) input_data: String,
     pub step_type_id: &'static str,
 }
 #[derive(Debug)]
@@ -36,7 +66,17 @@ pub struct Current {
     //implement something like parallel stepping. TBD
     pub step: usize,
     pub part_id: String,
-    pub state: Box<dyn VisualizationState>,
+}
+#[derive(Debug)]
+pub(crate) struct State {
+    pub inner: Box<dyn StateProxy>,
+    pub info: StateInfo,
+}
+impl State {
+    pub(crate) fn reset(&mut self, raw_state_input: &str) -> Result<(), ParseError> {
+        self.inner = (self.info.factory)(raw_state_input)?;
+        Ok(())
+    }
 }
 
 impl<'a> Current {
@@ -49,9 +89,10 @@ impl<'a> Current {
 #[derive(Debug)]
 /// A complete puzzle instance ready for visualization
 pub struct PuzzleInstance {
-    pub metadata: PuzzleMetadata,
-    pub parts: Vec<PartInfo>,
-    pub current: Option<Current>,
+    pub(crate) metadata: Metadata,
+    pub(crate) parts: Vec<PartInfo>,
+    pub(crate) current: Option<Current>,
+    pub(crate) state: Option<State>,
     // pub state: Option<Box<dyn VisualizationState>>,
     // // pub steps: Vec<Box<dyn StepAction>>,
     // // pub step_type_id: &'static str,
@@ -61,36 +102,26 @@ pub struct PuzzleInstance {
 
 impl PuzzleInstance {
     /// Create a puzzle instance from a source
-    pub fn from_source(source: PuzzleSource) -> Result<PuzzleInstance, ParseError>
+    pub fn from_source(
+        source: PuzzleSource,
+        registry: &DomainRegistry,
+    ) -> Result<PuzzleInstance, ParseError>
     where
         Self: Sized,
     {
-        let raw_content = match source {
-            PuzzleSource::String(str) => str,
-            PuzzleSource::File(path) => std::fs::read_to_string(path)?,
-            PuzzleSource::Executable(path, args) => {
-                // Execute and capture output
-                let output = std::process::Command::new(path).args(args).output()?;
-                String::from_utf8(output.stdout)?
-            }
-            PuzzleSource::InlineCode(content) => content,
-            PuzzleSource::Network(_url) => {
-                // HTTP request implementation
-                todo!("Network source")
-            }
-            PuzzleSource::Interactive => {
-                // Interactive input
-                todo!("Interactive source")
-            }
-        };
+        let raw_content = read_source_content(source)?;
         let (metadata, parts) = parse_puzzle_format(&raw_content)?;
-
+        let mut parsed_parts = Vec::new();
+        for part in parts.into_iter() {
+            parsed_parts.push(parse_part_info(part, registry)?);
+        }
         // let metadata = PuzzleMetadata::default();
         Ok(PuzzleInstance {
             metadata,
             // state: None,
             current: None,
-            parts: parts.into_iter().map(|t| t.0).collect(),
+            parts: parsed_parts,
+            state: None,
             // parts: Vec::new(),
             // steps: Vec::new(),
         })
@@ -126,22 +157,118 @@ pub enum PuzzleSource {
     Network(String),
     Interactive,
 }
-// ============================================================================
-// PUZZLE DEFINITION
-// ============================================================================
 
-/// Creates puzzle instances from various sources
-pub trait Puzzle {
-    type InputProcessor: RawInput;
+#[cfg(test)]
+mod test {
+    use crate::domains::create_registry;
 
-    /// Create a puzzle instance from a source
-    fn from_source(source: PuzzleSource) -> Result<PuzzleInstance, PuzzleError>
-    where
-        Self: Sized;
+    use super::*;
 
-    /// Solve a specific part and generate steps
-    fn solve_part(
-        state: &mut <Self::InputProcessor as RawInput>::VisualizationState,
-        part_id: &str,
-    ) -> Result<Vec<<Self::InputProcessor as RawInput>::StepAction>, SolveError>;
+    #[test]
+    fn test_basic_puzzle_parsing() {
+        let content = r#"
+        title: Test Puzzle
+        part.tokenize.name: Tokenization
+        part.tokenize.step_type: text_step
+        part.tokenize.input: hello world
+        part.tokenize.steps: 0__goodbye__ __
+    "#;
+
+        let result = PuzzleInstance::from_source(
+            PuzzleSource::String(content.to_string()),
+            create_registry().domain_registry(),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_puzzle_invalid_step_type() {
+        let content = r#"
+        title: Bad Puzzle
+        part.tokenize.name: Tokenization
+        part.tokenize.input: hello world
+        part.tokenize.steps: 0__goodbye__ __
+        part.tokenize.step_type: unknown_type
+    "#;
+
+        let result = PuzzleInstance::from_source(
+            PuzzleSource::String(content.to_string()),
+            create_registry().domain_registry(),
+        );
+        println!("{result:?}");
+        assert!(matches!(result, Err(ParseError::UnknownStepType { .. })));
+    }
+    #[test]
+    fn test_missing_puzzle_fields() {
+        let content_list = vec![
+            r#"
+        title: Test Puzzle
+        #part.tokenize.name: Tokenization
+        part.tokenize.step_type: text_step
+        part.tokenize.input: hello world
+        part.tokenize.steps: 0__goodbye__ __
+    "#,
+            r#"
+        title: Test Puzzle
+        part.tokenize.name: Tokenization
+        #part.tokenize.step_type: text_step
+        part.tokenize.input: hello world
+        part.tokenize.steps: 0__goodbye__ __
+    "#,
+            r#"
+        title: Test Puzzle
+        part.tokenize.name: Tokenization
+        part.tokenize.step_type: text_step
+        #part.tokenize.input: hello world
+        part.tokenize.steps: 0__goodbye__ __
+    "#,
+            r#"
+        title: Test Puzzle
+        part.tokenize.name: Tokenization
+        part.tokenize.step_type: text_step
+        part.tokenize.input: hello__world
+        #part.tokenize.steps: 0__goodbye__ __
+    "#,
+        ];
+        for content in content_list {
+            test_missing_field(content);
+        }
+    }
+    // #[cfg(test)]
+    fn test_missing_field(content: &str) {
+        let result = PuzzleInstance::from_source(
+            PuzzleSource::String(content.to_string()),
+            create_registry().domain_registry(),
+        );
+        println!("{result:?}");
+        // TODO: we could also test for correct fmt
+        assert!(matches!(result, Err(ParseError::MissingPartField(_, _))));
+    }
+
+    #[test]
+    fn test_invalid_part_structure() {
+        let content_list = vec![
+            r#"
+        title: Test Puzzle
+        part.tokenize: Tokenization
+        #part.tokenize.step_type: text_step
+        #part.tokenize.input: hello__world
+        #part.tokenize.steps: 0__goodbye__ __
+    "#,
+        ];
+        for content in content_list {
+            test_invalid_part(content);
+        }
+    }
+
+    #[cfg(test)]
+    fn test_invalid_part(content: &str) {
+        let result = PuzzleInstance::from_source(
+            PuzzleSource::String(content.to_string()),
+            create_registry().domain_registry(),
+        );
+        println!("{result:?}");
+        // TODO: we could also test for correct fmt
+        assert!(matches!(result, Err(ParseError::InvalidPartStructure(_))));
+    }
 }

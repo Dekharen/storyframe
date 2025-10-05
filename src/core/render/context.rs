@@ -1,14 +1,16 @@
 use std::any::Any;
 
+use crate::core::id::ContextId;
+
 // ============================================================================
 // RENDERING CONTEXT
 // ============================================================================
 
 /// Abstraction over different UI frameworks (egui, console, etc.)
 pub trait RenderContext {
-    /// Framework-specific rendering area
-    fn render_area(&mut self) -> &mut dyn Any;
+    fn context_type_id() -> ContextId
+    where
+        Self: Sized;
 
-    /// Request a repaint/refresh
-    fn request_repaint(&self);
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

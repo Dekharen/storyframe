@@ -4,16 +4,16 @@
 
 use std::collections::HashMap;
 
-use crate::core::step::StepAction;
-
 use super::RendererProxy;
+use crate::core::render::context::RenderContext;
 use crate::core::render::Renderer;
-
-/// Registry for managing available renderers
+use crate::core::state::snapshot::StateSnapshot;
+use crate::core::state::StateInfo;
+pub use crate::domains::DomainRegistry;
+// Registry for managing available renderers
 pub struct RendererRegistry {
-    renderers: HashMap<&'static str, Vec<Box<dyn RendererProxy>>>,
+    renderers: HashMap<RendererKey, Vec<Box<dyn RendererProxy>>>,
 }
-
 impl RendererRegistry {
     /// Creates a new [`RendererRegistry`].
     pub fn new() -> Self {
@@ -22,35 +22,120 @@ impl RendererRegistry {
         }
     }
 
-    /// Register a renderer for a specific step type
-    pub fn register_renderer<TStep, R>(&mut self, renderer: R)
+    pub fn register_renderer<R>(&mut self, renderer: R)
     where
-        TStep: StepAction + 'static,
-        R: Renderer + Clone + 'static,
+        R: Renderer + 'static,
     {
-        let step_type = TStep::step_type_id();
+        let key = RendererKey::new(
+            R::StateSnapshot::snapshot_type_id(),
+            R::Context::context_type_id(),
+        );
         self.renderers
-            .entry(step_type)
+            .entry(key)
             .or_default()
             .push(Box::new(renderer));
     }
 
-    /// Get all registered renderers for a step type
-    pub fn renderers_for_step_type(&self, step_type: &str) -> Option<&Vec<Box<dyn RendererProxy>>> {
-        self.renderers.get(step_type)
+    pub fn get_renderers(
+        &self,
+        snapshot_type: &str,
+        context_type: &str,
+    ) -> Option<&Vec<Box<dyn RendererProxy>>> {
+        let key = RendererKey::new(snapshot_type, context_type);
+        self.renderers.get(&key)
     }
-
-    /// Get first compatible renderer for a step type
-    pub fn get_renderer_for_step_type(&self, step_type: &str) -> Option<Box<dyn RendererProxy>> {
-        self.renderers
-            .get(step_type)?
+    pub fn get_renderers_id(
+        &self,
+        state_type: &str,
+        context_type: &str,
+    ) -> Option<Vec<&'static str>> {
+        let renderers = self.get_renderers(state_type, context_type)?;
+        Some(
+            renderers
+                .iter()
+                .map(|renderer| renderer.renderer_name())
+                .collect(),
+        )
+    }
+    pub fn get_first_renderer(
+        &self,
+        state_type: &str,
+        context_type: &str,
+    ) -> Option<&dyn RendererProxy> {
+        self.get_renderers(state_type, context_type)?
             .first()
-            .map(|r| r.clone_boxed())
+            .map(|boxed| boxed.as_ref())
     }
 }
 
 impl Default for RendererRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RendererKey {
+    pub snapshot_type: String,
+    pub context_type: String,
+}
+
+impl RendererKey {
+    pub fn new(snapshot_type: &str, context_type: &str) -> Self {
+        Self {
+            snapshot_type: snapshot_type.to_string(),
+            context_type: context_type.to_string(),
+        }
+    }
+}
+
+// // Optional: if I want tuple-like access
+// impl From<(&str, &str)> for RendererKey {
+//     fn from((state_type, context_type): (&str, &str)) -> Self {
+//         Self::new(state_type, context_type)
+//     }
+// }
+
+pub struct StateRegistry {
+    states: HashMap<&'static str, Vec<StateInfo>>,
+}
+
+impl StateRegistry {
+    pub fn get(&self, step_type: &str) -> Option<&Vec<StateInfo>> {
+        self.states.get(step_type)
+    }
+    pub fn from_mappings(mapping: &HashMap<&'static str, Vec<StateInfo>>) -> Self {
+        Self {
+            states: mapping.clone(),
+        }
+    }
+}
+
+pub struct Registry {
+    renderer_registry: RendererRegistry,
+    state_registry: StateRegistry,
+    domain_registry: DomainRegistry,
+}
+
+impl Registry {
+    pub fn new(
+        renderer_registry: RendererRegistry,
+        state_registry: StateRegistry,
+        domain_registry: DomainRegistry,
+    ) -> Self {
+        Self {
+            renderer_registry,
+            state_registry,
+            domain_registry,
+        }
+    }
+    pub fn renderer_registry(&self) -> &RendererRegistry {
+        &self.renderer_registry
+    }
+    pub fn state_registry(&self) -> &StateRegistry {
+        &self.state_registry
+    }
+    pub fn domain_registry(&self) -> &DomainRegistry {
+        &self.domain_registry
     }
 }

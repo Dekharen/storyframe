@@ -3,25 +3,108 @@
 // ============================================================================
 
 pub mod registry;
-use crate::{
-    core::render::{context::RenderContext, RendererProxy},
-    error::VisualizationError,
-    puzzle::PuzzleInstance,
-};
-use registry::RendererRegistry;
+pub mod selectors;
+use std::marker::PhantomData;
 
+use crate::{
+    core::{
+        render::{context::RenderContext, RendererProxy},
+        state::StateInfo,
+    },
+    error::{ParseError, VisualizationError},
+    puzzle::{Current, Metadata, PartInfo, PuzzleInstance, PuzzleSource},
+};
+use registry::Registry;
+use selectors::{PartSelector, RendererSelector, StateSelector};
 /// Manages renderers and coordinates visualization
 pub struct VisualizationEngine {
     puzzle: Option<PuzzleInstance>,
     active_renderer: Option<Box<dyn RendererProxy>>,
+    registry: Registry,
+    // registry: RendererRegistry,
+    // domain_registry: DomainRegistry,
 }
 
 impl VisualizationEngine {
     pub fn new() -> Self {
+        Self::with_registry(crate::domains::create_registry())
+    }
+
+    pub fn from_source(source: PuzzleSource) -> Result<Self, ParseError> {
+        let mut engine = Self::new();
+        engine.load_puzzle_from_source(source)?;
+        Ok(engine)
+    }
+    pub fn with_registry(registry: Registry) -> Self {
         Self {
+            registry,
+            // registry: RendererRegistry::new(),
             puzzle: None,
             active_renderer: None,
         }
+    }
+    pub fn from_source_with_registry(
+        source: PuzzleSource,
+        registry: Registry,
+    ) -> Result<Self, ParseError> {
+        let mut engine = Self::with_registry(registry);
+        engine.load_puzzle_from_source(source)?;
+        Ok(engine)
+    }
+    fn load_puzzle_from_source(&mut self, source: PuzzleSource) -> Result<(), ParseError> {
+        let puzzle = PuzzleInstance::from_source(source, self.registry.domain_registry())?;
+        self.puzzle = Some(puzzle);
+        // TODO: Set up initial current state...
+        Ok(())
+    }
+
+    pub fn configure_for_current_context<C: RenderContext + 'static>(
+        &mut self,
+    ) -> ContextConfiguration<C> {
+        ContextConfiguration {
+            engine: self,
+            context_type: C::context_type_id(),
+            _phantom: PhantomData,
+        }
+    }
+    pub fn get_parts(&self) -> Result<&[PartInfo], VisualizationError> {
+        Ok(&self
+            .puzzle
+            .as_ref()
+            .ok_or(VisualizationError::NoPuzzleLoaded)?
+            .parts)
+    }
+    pub fn get_metadata(&self) -> Result<Metadata, VisualizationError> {
+        let metadata = self
+            .puzzle
+            .as_ref()
+            .ok_or(VisualizationError::NoPuzzleLoaded)?
+            .metadata
+            .clone();
+        Ok(metadata)
+    }
+    pub fn select_part(
+        &mut self,
+        selection: fn(&mut PartSelector),
+    ) -> Result<(), VisualizationError> {
+        let mut selector = PartSelector::from_parts(
+            &self
+                .puzzle
+                .as_ref()
+                .ok_or(VisualizationError::NoPuzzleLoaded)?
+                .parts,
+        );
+        selection(&mut selector);
+        let select = selector
+            .resolve_selection()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        self.puzzle.as_mut().unwrap().current = Some(Current {
+            step: 0,
+            part_id: select.id.clone(),
+        });
+        self.active_renderer = None;
+        self.puzzle.as_mut().unwrap().state = None;
+        Ok(())
     }
     // ============================================================================
     // STEPPING CONTROL METHODS
@@ -39,9 +122,13 @@ impl VisualizationEngine {
         let part = current
             .current_part(&puzzle.parts)
             .ok_or(VisualizationError::NoPartLoaded)?;
+        let state = puzzle
+            .state
+            .as_mut()
+            .ok_or(VisualizationError::MissingState)?;
         if current.step < part.steps.len() {
             let step = &part.steps[current.step];
-            current.state.apply_step(step.as_ref())?;
+            state.inner.apply_step_erased(step.as_ref())?;
             current.step += 1;
             Ok(())
         } else {
@@ -59,12 +146,16 @@ impl VisualizationEngine {
             .current
             .as_mut()
             .ok_or(VisualizationError::NoPartLoaded)?;
+        let state = puzzle
+            .state
+            .as_mut()
+            .ok_or(VisualizationError::MissingState)?;
         let part = current
             .current_part(&puzzle.parts)
             .ok_or(VisualizationError::NoPartLoaded)?;
         if current.step > 0 {
             let target_step = current.step - 1;
-            current.state.seek_to_step(target_step, &part.steps)?;
+            state.inner.seek_to_step_erased(target_step, &part.steps)?;
             current.step = target_step;
             Ok(())
         } else {
@@ -78,6 +169,10 @@ impl VisualizationEngine {
             .puzzle
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
+        let state = puzzle
+            .state
+            .as_mut()
+            .ok_or(VisualizationError::MissingState)?;
         let current = puzzle
             .current
             .as_mut()
@@ -86,7 +181,7 @@ impl VisualizationEngine {
             .current_part(&puzzle.parts)
             .ok_or(VisualizationError::NoPartLoaded)?;
         if step_index <= part.steps.len() {
-            current.state.seek_to_step(step_index, &part.steps)?;
+            state.inner.seek_to_step_erased(step_index, &part.steps)?;
             current.step = step_index;
             Ok(())
         } else {
@@ -104,7 +199,19 @@ impl VisualizationEngine {
             .current
             .as_mut()
             .ok_or(VisualizationError::NoPartLoaded)?;
-        current.state.reset_to_initial();
+        let state = puzzle
+            .state
+            .as_mut()
+            .ok_or(VisualizationError::MissingState)?;
+        state
+            .reset(
+                &current
+                    .current_part(&puzzle.parts)
+                    .ok_or(VisualizationError::NoPartLoaded)?
+                    .input_data,
+            )
+            .ok()
+            .ok_or(VisualizationError::MissingState)?;
         current.step = 0;
         Ok(())
     }
@@ -168,92 +275,22 @@ impl VisualizationEngine {
         Ok((current.step, part.steps.len()))
     }
 
-    /// Get description of current step (if any)
-    pub fn current_step_description(&self) -> Result<Option<String>, VisualizationError> {
-        let puzzle = self
-            .puzzle
-            .as_ref()
-            .ok_or(VisualizationError::NoPuzzleLoaded)?;
-        let current = puzzle
-            .current
-            .as_ref()
-            .ok_or(VisualizationError::NoPartLoaded)?;
-        let part = current
-            .current_part(&puzzle.parts)
-            .ok_or(VisualizationError::NoPartLoaded)?;
-
-        if current.step < part.steps.len() {
-            let step = &part.steps[current.step];
-            Ok(Some(step.description()))
-        } else {
-            Ok(None)
-        }
-    }
-
     // ============================================================================
     // PUZZLE MANAGEMENT WITH RENDERER COMPATIBILITY
     // ============================================================================
 
+    // Ended up unimplemented. I don't think we ever really need this.
+    //
+    // pub fn load_registry(&mut self, registry: RendererRegistry) {
+    //     self.registry = registry;
+    //     //FIXME: Error here :
+    //     //TODO: we need to verify that we're not rendering something, and null the current renderer
+    //     //or at least check if it's not in the new registry !
+    // }
     /// Load a puzzle and ensure renderer compatibility
-    pub fn load_puzzle(
-        &mut self,
-        puzzle: PuzzleInstance,
-        _registry: &RendererRegistry, //TODO: fix this. The logic has changed ! This should be
-                                      //handled somewhere else
-                                      //
-    ) -> Result<(), VisualizationError> {
-        // Check if current renderer is compatible
-        // if let Some(current_renderer) = &self.active_renderer {
-        //     if current_renderer.step_type_id() != puzzle.step_type_id {
-        //         // Auto-switch to compatible renderer
-        //         if let Some(new_renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id)
-        //         {
-        //             self.active_renderer = Some(new_renderer);
-        //         } else {
-        //             return Err(VisualizationError::NoCompatibleRenderer(
-        //                 puzzle.step_type_id,
-        //             ));
-        //         }
-        //     }
-        // } else {
-        //     // No renderer selected, try to auto-select
-        //     if let Some(renderer) = registry.get_renderer_for_step_type(puzzle.step_type_id) {
-        //         self.active_renderer = Some(renderer);
-        //     } else {
-        //         return Err(VisualizationError::NoCompatibleRenderer(
-        //             puzzle.step_type_id,
-        //         ));
-        //     }
-        // }
-        //
+    pub fn load_puzzle(&mut self, puzzle: PuzzleInstance) {
         self.active_renderer = None;
         self.puzzle = Some(puzzle);
-        Ok(())
-    }
-
-    /// Switch renderer (assumes registry provided compatible renderer)
-    pub fn set_renderer(
-        &mut self,
-        renderer: Box<dyn RendererProxy>,
-    ) -> Result<(), VisualizationError> {
-        if let Some(puzzle) = &self.puzzle {
-            let step_type = puzzle
-                .current_part()
-                .ok_or(VisualizationError::NoPartLoaded)?
-                // .expect("A renderer was set without a part selected. This is an engine failure.")
-                .step_type_id;
-            assert_eq!(
-                renderer.step_type_id(),
-                step_type,
-                "Registry provided incompatible renderer: expected {}, got {}",
-                step_type,
-                renderer.step_type_id()
-            );
-            self.active_renderer = Some(renderer);
-            Ok(())
-        } else {
-            panic!("Cannot set renderer without loaded puzzle - this indicates a bug in the application logic");
-        }
     }
 
     // ============================================================================
@@ -270,22 +307,12 @@ impl VisualizationEngine {
             .active_renderer
             .as_mut()
             .ok_or(VisualizationError::NoRendererSelected)?;
-        let current = puzzle
-            .current
+        let state = puzzle
+            .state
             .as_ref()
-            .ok_or(VisualizationError::NoPartLoaded)?;
-        let part = current
-            .current_part(&puzzle.parts)
-            .ok_or(VisualizationError::NoPartLoaded)?;
-        let snapshot = current.state.create_snapshot();
-
-        if current.step < part.steps.len() {
-            let current_step = &part.steps[current.step];
-            renderer.render_step_erased(current_step.as_ref(), snapshot.as_ref(), context);
-        } else {
-            renderer.render_state_erased(snapshot.as_ref(), context);
-        }
-
+            .ok_or(VisualizationError::MissingState)?;
+        let snapshot = state.inner.create_snapshot_erased();
+        renderer.render_state_erased(snapshot.as_ref(), context)?;
         Ok(())
     }
 }
@@ -293,5 +320,85 @@ impl VisualizationEngine {
 impl Default for VisualizationEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct ContextConfiguration<'a, C> {
+    engine: &'a mut VisualizationEngine,
+    context_type: &'static str,
+    _phantom: PhantomData<C>,
+}
+
+impl<C: RenderContext + 'static> ContextConfiguration<'_, C> {
+    pub fn set_renderer(
+        &mut self,
+        selector: impl Fn(&mut RendererSelector),
+    ) -> Result<(), VisualizationError> {
+        let puzzle = self
+            .engine
+            .puzzle
+            .as_ref()
+            .ok_or(VisualizationError::NoPuzzleLoaded)?;
+        //FIXME: Wrong error type
+        let snapshot = puzzle
+            .state
+            .as_ref()
+            .ok_or(VisualizationError::IncompatibleRenderer)?
+            .info
+            .snapshot_type_id;
+
+        let renderers = self
+            .engine
+            .registry
+            .renderer_registry()
+            //FIXME : Wrong error type
+            .get_renderers(snapshot, self.context_type)
+            .ok_or(VisualizationError::IncompatibleRenderer)?;
+        let mut selection = RendererSelector::from_renderers(renderers)
+            .ok_or(VisualizationError::IncompatibleRenderer)?;
+
+        selector(&mut selection);
+        let new_renderer = selection
+            .resolve_selection()
+            .ok_or(VisualizationError::IncompatibleRenderer)?;
+        self.engine.active_renderer = Some(new_renderer);
+        Ok(())
+    }
+
+    pub fn set_state(
+        &mut self,
+        selector: impl Fn(&mut StateSelector),
+    ) -> Result<(), VisualizationError> {
+        let puzzle = self
+            .engine
+            .puzzle
+            .as_mut()
+            .ok_or(VisualizationError::NoPuzzleLoaded)?;
+        let current = puzzle
+            .current
+            .as_mut()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            //FIXME: These are not be the right
+            // error types, but the logic is sound. Bugs would be confusing
+            .ok_or(VisualizationError::NoPartLoaded)?;
+
+        let step_type = part.step_type_id;
+        let mut selection =
+            StateSelector::from_step_id(step_type, self.engine.registry.state_registry())
+                .ok_or(VisualizationError::IncompatibleRenderer)?;
+        selector(&mut selection);
+        let selected_state: StateInfo = selection
+            .resolve_selection()
+            .ok_or(VisualizationError::NoRendererSelected)?;
+        let state = (selected_state.factory)(&part.input_data)
+            .ok()
+            .ok_or(VisualizationError::NoRendererSelected)?; //FIXME:
+        puzzle.state = Some(crate::puzzle::State {
+            inner: state,
+            info: selected_state,
+        });
+        Ok(())
     }
 }

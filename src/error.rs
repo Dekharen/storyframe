@@ -17,7 +17,10 @@ pub enum ParseError {
         attempted_type: &'static str,
         existing_value: String,
     },
-    UnknownStepType(String),
+    UnknownStepType {
+        step_type: String,
+        supported_step_types: Vec<String>,
+    },
     EmptyPath,
 }
 
@@ -48,12 +51,14 @@ impl fmt::Display for ParseError {
             ParseError::MissingPartField(part_name, missing_key) => {
                 write!(f, "Part {part_name} is missing the key : {missing_key}")
             }
-            ParseError::UnknownStepType(step_type) => {
+            ParseError::UnknownStepType {
+                step_type,
+                supported_step_types,
+            } => {
                 write!(
                     f,
                     "Unknown step type '{}'. Supported types: {:?}",
-                    step_type,
-                    crate::domains::supported_step_types()
+                    step_type, supported_step_types,
                 )
             }
         }
@@ -86,12 +91,16 @@ impl From<std::io::Error> for ParseError {
 pub enum StepError {
     InvalidIndex(usize),
     IncompatibleStepType,
+    InvalidPosition(usize),
 }
 
 impl fmt::Display for StepError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StepError::InvalidIndex(idx) => write!(f, "Invalid step index: {}", idx),
+            StepError::InvalidPosition(idx) => {
+                write!(f, "Invalid step position within state: {}", idx)
+            }
             StepError::IncompatibleStepType => write!(f, "Incompatible step type"),
         }
     }
@@ -126,7 +135,8 @@ pub enum RenderError {
         expected: &'static str,
         received: &'static str,
     },
-    ContextError(String),
+    IncompatibleContext(&'static str),
+    IncompatibleState(&'static str),
 }
 
 impl fmt::Display for RenderError {
@@ -139,7 +149,16 @@ impl fmt::Display for RenderError {
                     expected, received
                 )
             }
-            RenderError::ContextError(msg) => write!(f, "Render context error: {}", msg),
+            RenderError::IncompatibleState(msg) => {
+                write!(f, "Render context was expecting this state type : {}.", msg)
+            }
+            RenderError::IncompatibleContext(msg) => {
+                write!(
+                    f,
+                    "Render context was expecting this context type : {}.",
+                    msg
+                )
+            }
         }
     }
 }
@@ -160,6 +179,7 @@ pub enum VisualizationError {
     AlreadyAtEnd,
     AlreadyAtBeginning,
     InvalidStepIndex(usize),
+    MissingState,
 }
 
 impl fmt::Display for VisualizationError {
@@ -183,8 +203,9 @@ impl fmt::Display for VisualizationError {
             }
             VisualizationError::NoCompatibleRenderer(step) => write!(
                 f,
-                "Step type is implemented, but does not have any renderer : {step}"
+                "State type is implemented, but does not have any loaded renderer : {step}"
             ),
+            VisualizationError::MissingState => todo!(),
         }
     }
 }

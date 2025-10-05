@@ -1,4 +1,5 @@
 pub mod core {
+    pub mod id;
     pub mod input;
     pub mod render;
     pub mod state;

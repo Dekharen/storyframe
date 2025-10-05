@@ -3,23 +3,21 @@
 use std::collections::HashMap;
 
 use crate::{
-    domains::step_type_to_id,
+    // domains::step_type_to_id,
+    core::step::StepAction,
     error::ParseError,
-    puzzle::{PartInfo, PuzzleMetadata},
+    puzzle::{Metadata, RawPartMetadata},
 };
 
-// pub description: Option<String>,
-// pub author: Option<String>,
-// pub difficulty: Option<u8>,
-//
+pub type StepParserFn = fn(&str) -> Result<Box<dyn StepAction>, ParseError>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Field {
-    Leaf(String),                 // Terminal value: "Hello World"
-    Node(HashMap<String, Field>), // Nested fields
+    Leaf(String),                 // Terminal value
+    Node(HashMap<String, Field>), // Nested
 }
 
 impl Field {
-    /// Parse a path like part.tokenize.name under the form "[part, tokenize, name}"
+    /// Parse a path like part.tokenize.name under the form "[part, tokenize, name]"
     pub fn get_path(&self, path: &[&str]) -> Option<&Field> {
         match (self, path) {
             (Field::Leaf(_), []) => Some(self),
@@ -63,9 +61,7 @@ impl Field {
 }
 const COMMENT_SIGN: char = '#';
 /// Entry point for the parser, once transformed into string.
-pub fn parse_puzzle_format(
-    content: &str,
-) -> Result<(PuzzleMetadata, Vec<(PartInfo, String)>), ParseError> {
+pub fn parse_puzzle_format(content: &str) -> Result<(Metadata, Vec<RawPartMetadata>), ParseError> {
     let mut root = Field::Node(HashMap::new());
 
     for line in content.lines() {
@@ -87,8 +83,8 @@ pub fn parse_puzzle_format(
     Ok((metadata, parts))
 }
 
-fn extract_metadata(root: &Field) -> Result<PuzzleMetadata, ParseError> {
-    let mut metadata = PuzzleMetadata::default();
+fn extract_metadata(root: &Field) -> Result<Metadata, ParseError> {
+    let mut metadata = Metadata::default();
 
     if let Some(title) = root.get_path(&["title"]).and_then(|f| f.as_leaf()) {
         metadata.title = title.to_string();
@@ -104,13 +100,14 @@ fn extract_metadata(root: &Field) -> Result<PuzzleMetadata, ParseError> {
 
     Ok(metadata)
 }
-fn extract_parts_with_steps(root: &Field) -> Result<Vec<(PartInfo, String)>, ParseError> {
+fn extract_parts_with_steps(root: &Field) -> Result<Vec<RawPartMetadata>, ParseError> {
     let mut parts = Vec::new();
 
     if let Some(Field::Node(part_map)) = root.get_path(&["part"]) {
         for (part_id, part_field) in part_map {
-            let (part_info, input_data) = extract_single_part_with_steps(part_id, part_field)?;
-            parts.push((part_info, input_data));
+            let part_metadata = extract_single_part_with_steps(part_id, part_field)?;
+
+            parts.push(part_metadata);
         }
     }
 
@@ -120,7 +117,7 @@ fn extract_parts_with_steps(root: &Field) -> Result<Vec<(PartInfo, String)>, Par
 fn extract_single_part_with_steps(
     part_id: &str,
     part_field: &Field,
-) -> Result<(PartInfo, String), ParseError> {
+) -> Result<RawPartMetadata, ParseError> {
     let Field::Node(fields) = part_field else {
         return Err(ParseError::InvalidPartStructure(part_id.to_string()));
     };
@@ -147,17 +144,17 @@ fn extract_single_part_with_steps(
         .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "steps"))?;
 
     // Create PartInfo without steps (they'll be parsed later with proper input context)
-    let part_info = PartInfo {
+    let part_metadata = RawPartMetadata {
         id: part_id.to_string(),
         display_name: name.to_string(),
         description: fields
             .get("description")
             .and_then(|f| f.as_leaf())
             .map(String::from),
-        input_data,        // Store in PartInfo too for easy access
-        steps: Vec::new(), // Will be populated later
-        step_type_id: step_type_to_id(step_type)?,
+        input_data,                              // Store in PartInfo too for easy access
+        raw_steps_string: steps_str.to_string(), // Will be populated later
+        raw_step_type_id: step_type.to_string(),
     };
 
-    Ok((part_info, steps_str.to_string()))
+    Ok(part_metadata)
 }
