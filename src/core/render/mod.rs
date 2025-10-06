@@ -12,10 +12,12 @@ pub mod context;
 /// Generic renderer for a specific step type
 pub trait Renderer: Send + Clone + 'static {
     type StateSnapshot: StateSnapshot;
-    type Context: RenderContext;
+    type Context<'a>: RenderContext
+    where
+        Self: 'a;
 
     /// Render a step application with the current state
-    fn render_state(&mut self, snapshot: &Self::StateSnapshot, context: &mut Self::Context);
+    fn render_state(&mut self, snapshot: &Self::StateSnapshot, context: &mut Self::Context<'_>);
 
     /// Get human-readable name for UI selection
     fn renderer_name(&self) -> RendererId;
@@ -64,11 +66,14 @@ impl<R: Renderer> RendererProxy for R {
             .as_any()
             .downcast_ref::<R::StateSnapshot>()
             .ok_or_else(|| RenderError::IncompatibleState(R::StateSnapshot::snapshot_type_id()))?;
-
-        let typed_context = context
-            .as_any_mut()
-            .downcast_mut::<R::Context>()
-            .ok_or_else(|| RenderError::IncompatibleContext(R::Context::context_type_id()))?;
+        //FIXME: NO CHECKING ON THE TYPE ID YET !!
+        //
+        let ptr = context.as_ptr() as *mut R::Context<'_>;
+        let typed_context: &mut R::Context<'_> = unsafe { &mut *ptr };
+        // let typed_context = context
+        // .as_any_mut()
+        // .downcast_mut::<R::Context>()
+        // .ok_or_else(|| RenderError::IncompatibleContext(R::Context::context_type_id()))?;
         self.render_state(typed_snapshot, typed_context);
         Ok(())
     }

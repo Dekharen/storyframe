@@ -1,11 +1,11 @@
 use crate::core::state::{snapshot::StateSnapshot, VisualizationState};
 use std::ops::Deref;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextRepresentation {
-    content: String,
-    background_color: Option<String>,
-    foreground_color: Option<String>,
+    pub content: String,
+    pub background_color: Option<String>,
+    pub foreground_color: Option<String>,
 }
 
 #[derive(Debug)]
@@ -76,7 +76,7 @@ impl VisualizationState for TextState {
         todo!()
     }
     fn create_snapshot(&self) -> Box<Self::Snapshot> {
-        todo!()
+        Box::new(TextSnapshot(self.content.clone()))
     }
     fn state_type_id() -> &'static str
     where

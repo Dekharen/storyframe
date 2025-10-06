@@ -129,6 +129,17 @@ impl Registry {
             domain_registry,
         }
     }
+
+    pub fn renderer_registry_mut(&mut self) -> &mut RendererRegistry {
+        &mut self.renderer_registry
+    }
+    pub fn state_registry_mut(&mut self) -> &mut StateRegistry {
+        &mut self.state_registry
+    }
+    pub fn domain_registry_mut(&mut self) -> &mut DomainRegistry {
+        &mut self.domain_registry
+    }
+
     pub fn renderer_registry(&self) -> &RendererRegistry {
         &self.renderer_registry
     }

@@ -67,6 +67,16 @@ impl VisualizationEngine {
             _phantom: PhantomData,
         }
     }
+
+    pub fn register_renderer<R>(&mut self, renderer: R)
+    where
+        R: crate::core::render::Renderer,
+    {
+        self.registry
+            .renderer_registry_mut()
+            .register_renderer(renderer)
+    }
+
     pub fn get_parts(&self) -> Result<&[PartInfo], VisualizationError> {
         Ok(&self
             .puzzle
