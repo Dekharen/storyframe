@@ -11,10 +11,6 @@ impl RenderContext for Ctx {
     {
         "BLANK_CONTEXT"
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 #[test]
