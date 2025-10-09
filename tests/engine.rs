@@ -1,17 +1,15 @@
 use storyframe::{
-    core::render::context::RenderContext, engine::VisualizationEngine, error::ParseError,
-    puzzle::PuzzleSource, register_domain_types,
+    core::state::{snapshot::StateSnapshot, VisualizationState},
+    engine::VisualizationEngine,
+    error::ParseError,
+    impl_render_context,
+    puzzle::PuzzleSource,
+    register_domain_types, StepAction,
 };
 
 struct Ctx;
-impl RenderContext for Ctx {
-    fn context_type_id() -> storyframe::core::id::ContextId
-    where
-        Self: Sized,
-    {
-        "BLANK_CONTEXT"
-    }
-}
+
+impl_render_context!(Ctx => CtxTag);
 
 #[test]
 fn test_engine_basic_puzzle_parsing() {
@@ -127,6 +125,7 @@ fn test_engine_invalid_part_structure() {
         #part.tokenize.steps: highlight_char 0
     "#,
     ];
+
     for content in content_list {
         test_engine_invalid_part(content);
     }
@@ -140,10 +139,81 @@ fn test_engine_invalid_part(content: &str) {
 }
 // register_domain_types!();
 
-// struct Fail;
-register_domain_types!(
-// storyframe::domains::text::TextStep {
-//     aliases: [],
-//     states: [Fail]
-// }
-);
+#[derive(Debug)]
+struct TestStep;
+
+impl StepAction for TestStep {
+    fn type_id() -> &'static str
+    where
+        Self: Sized,
+    {
+        "test"
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn from_str(_string: &str) -> Result<Self, ParseError>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
+    }
+}
+
+struct TestSnapshot;
+impl StateSnapshot for TestSnapshot {
+    fn snapshot_type_id() -> &'static str
+    where
+        Self: Sized,
+    {
+        "test_snapshot"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[derive(Debug)]
+struct TestState;
+impl VisualizationState for TestState {
+    type Step = TestStep;
+
+    type Snapshot = TestSnapshot;
+
+    fn apply_step(&mut self, _step: &Self::Step) -> Result<(), storyframe::error::StepError> {
+        Ok(())
+    }
+
+    fn seek_to_step(
+        &mut self,
+        _step_index: usize,
+        _all_steps: &[&Self::Step],
+    ) -> Result<(), storyframe::error::StepError> {
+        Ok(())
+    }
+
+    fn create_snapshot(&self) -> Box<Self::Snapshot> {
+        Box::new(TestSnapshot)
+    }
+
+    fn state_type_id() -> &'static str
+    where
+        Self: Sized,
+    {
+        "test_state"
+    }
+
+    fn parse(_input: &str) -> Result<Self, ParseError>
+    where
+        Self: Sized,
+    {
+        Ok(Self)
+    }
+}
+
+register_domain_types!(TestStep {
+    aliases: ["t"],
+    states: [TestState]
+});

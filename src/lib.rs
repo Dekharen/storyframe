@@ -7,8 +7,14 @@ pub mod core {
 }
 pub mod domains;
 pub mod engine;
-// pub mod engine;
 pub mod error;
-// pub mod input;
+pub mod macros;
 pub mod puzzle;
-// pub mod step;
+pub use core::{
+    render::{
+        context::{HasContextTag, RenderContext},
+        Renderer,
+    },
+    step::StepAction,
+};
+pub use engine::registry::Registry;

@@ -1,4 +1,50 @@
-//TODO: Change these &'static str types to at least equivalent IDs
+/// Implements [`RenderContext`](crate::RenderContext) and [`HasContextTag`](crate::HasContextTag)
+/// for a given context type, generating a unique tag type in the process.
+///
+/// # Example
+/// ```
+/// use mylib::impl_render_context;
+///
+/// struct EguiContext<'a> {
+///     ui: &'a mut egui::Ui,
+/// }
+///
+/// impl_render_context!(EguiContext<'_> => EguiContextTag);
+/// ```
+///
+/// This generates:
+/// ```ignore
+/// pub struct EguiContextTag;
+///
+/// impl mylib::RenderContext for EguiContext<'_> {
+///     fn tag_id(&self) -> std::any::TypeId {
+///         std::any::TypeId::of::<EguiContextTag>()
+///     }
+/// }
+///
+/// impl mylib::HasContextTag for EguiContext<'_> {
+///     type Tag = EguiContextTag;
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_render_context {
+    ($ctx:ty => $tag:ident) => {
+        /// Unique zero-sized tag type for the given render context.
+        #[allow(non_camel_case_types)]
+        pub struct $tag;
+
+        impl $crate::RenderContext for $ctx {
+            #[inline]
+            fn tag_id(&self) -> ::std::any::TypeId {
+                ::std::any::TypeId::of::<$tag>()
+            }
+        }
+
+        impl $crate::HasContextTag for $ctx {
+            type Tag = $tag;
+        }
+    };
+}
 
 #[macro_export]
 macro_rules! register_domain_types {

@@ -88,7 +88,7 @@ impl<'a> Current {
 
 #[derive(Debug)]
 /// A complete puzzle instance ready for visualization
-pub struct PuzzleInstance {
+pub struct AlgorithmInstance {
     pub(crate) metadata: Metadata,
     pub(crate) parts: Vec<PartInfo>,
     pub(crate) current: Option<Current>,
@@ -100,12 +100,12 @@ pub struct PuzzleInstance {
     // pub current_part_id: String,
 }
 
-impl PuzzleInstance {
+impl AlgorithmInstance {
     /// Create a puzzle instance from a source
     pub fn from_source(
         source: PuzzleSource,
         registry: &DomainRegistry,
-    ) -> Result<PuzzleInstance, ParseError>
+    ) -> Result<AlgorithmInstance, ParseError>
     where
         Self: Sized,
     {
@@ -116,7 +116,7 @@ impl PuzzleInstance {
             parsed_parts.push(parse_part_info(part, registry)?);
         }
         // let metadata = PuzzleMetadata::default();
-        Ok(PuzzleInstance {
+        Ok(AlgorithmInstance {
             metadata,
             // state: None,
             current: None,
@@ -174,7 +174,7 @@ mod test {
         part.tokenize.steps: 0__goodbye__ __
     "#;
 
-        let result = PuzzleInstance::from_source(
+        let result = AlgorithmInstance::from_source(
             PuzzleSource::String(content.to_string()),
             create_registry().domain_registry(),
         );
@@ -191,7 +191,7 @@ mod test {
         part.tokenize.step_type: unknown_type
     "#;
 
-        let result = PuzzleInstance::from_source(
+        let result = AlgorithmInstance::from_source(
             PuzzleSource::String(content.to_string()),
             create_registry().domain_registry(),
         );
@@ -236,7 +236,7 @@ mod test {
     }
     // #[cfg(test)]
     fn test_missing_field(content: &str) {
-        let result = PuzzleInstance::from_source(
+        let result = AlgorithmInstance::from_source(
             PuzzleSource::String(content.to_string()),
             create_registry().domain_registry(),
         );
@@ -263,7 +263,7 @@ mod test {
 
     #[cfg(test)]
     fn test_invalid_part(content: &str) {
-        let result = PuzzleInstance::from_source(
+        let result = AlgorithmInstance::from_source(
             PuzzleSource::String(content.to_string()),
             create_registry().domain_registry(),
         );

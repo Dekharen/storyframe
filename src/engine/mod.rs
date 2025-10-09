@@ -4,21 +4,19 @@
 
 pub mod registry;
 pub mod selectors;
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 
 use crate::{
-    core::{
-        render::{context::RenderContext, RendererProxy},
-        state::StateInfo,
-    },
+    core::{render::RendererProxy, state::StateInfo},
     error::{ParseError, VisualizationError},
-    puzzle::{Current, Metadata, PartInfo, PuzzleInstance, PuzzleSource},
+    puzzle::{AlgorithmInstance, Current, Metadata, PartInfo, PuzzleSource},
+    HasContextTag, RenderContext,
 };
 use registry::Registry;
 use selectors::{PartSelector, RendererSelector, StateSelector};
 /// Manages renderers and coordinates visualization
 pub struct VisualizationEngine {
-    puzzle: Option<PuzzleInstance>,
+    puzzle: Option<AlgorithmInstance>,
     active_renderer: Option<Box<dyn RendererProxy>>,
     registry: Registry,
     // registry: RendererRegistry,
@@ -52,18 +50,18 @@ impl VisualizationEngine {
         Ok(engine)
     }
     fn load_puzzle_from_source(&mut self, source: PuzzleSource) -> Result<(), ParseError> {
-        let puzzle = PuzzleInstance::from_source(source, self.registry.domain_registry())?;
+        let puzzle = AlgorithmInstance::from_source(source, self.registry.domain_registry())?;
         self.puzzle = Some(puzzle);
         // TODO: Set up initial current state...
         Ok(())
     }
 
-    pub fn configure_for_current_context<C: RenderContext + 'static>(
+    pub fn configure_for_current_context<C: RenderContext + HasContextTag + 'static>(
         &mut self,
     ) -> ContextConfiguration<C> {
         ContextConfiguration {
             engine: self,
-            context_type: C::context_type_id(),
+            context_type: TypeId::of::<C::Tag>(),
             _phantom: PhantomData,
         }
     }
@@ -298,7 +296,7 @@ impl VisualizationEngine {
     //     //or at least check if it's not in the new registry !
     // }
     /// Load a puzzle and ensure renderer compatibility
-    pub fn load_puzzle(&mut self, puzzle: PuzzleInstance) {
+    pub fn load_puzzle(&mut self, puzzle: AlgorithmInstance) {
         self.active_renderer = None;
         self.puzzle = Some(puzzle);
     }
@@ -335,7 +333,7 @@ impl Default for VisualizationEngine {
 
 pub struct ContextConfiguration<'a, C> {
     engine: &'a mut VisualizationEngine,
-    context_type: &'static str,
+    context_type: TypeId,
     _phantom: PhantomData<C>,
 }
 

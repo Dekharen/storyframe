@@ -1,10 +1,11 @@
-use crate::{core::state::snapshot::StateSnapshot, error::RenderError};
-use context::RenderContext;
+use std::any::TypeId;
 
 use super::id::{RendererId, StateId};
+use crate::{
+    core::state::snapshot::StateSnapshot, error::RenderError, HasContextTag, RenderContext,
+};
 
 pub mod context;
-// pub mod registry;
 // ============================================================================
 // RENDERING SYSTEM
 // ============================================================================
@@ -12,7 +13,7 @@ pub mod context;
 /// Generic renderer for a specific step type
 pub trait Renderer: Send + Clone + 'static {
     type StateSnapshot: StateSnapshot;
-    type Context<'a>: RenderContext
+    type Context<'a>: RenderContext + HasContextTag
     where
         Self: 'a;
 
@@ -21,12 +22,6 @@ pub trait Renderer: Send + Clone + 'static {
 
     /// Get human-readable name for UI selection
     fn renderer_name(&self) -> RendererId;
-
-    // TODO: either remove or change this
-    //
-    //
-    //    /// Check if this renderer can work with the given visualization state type
-    //    fn supports_state_type(&self, state_type: &str) -> bool;
 }
 /// Type-erased wrapper for storing different renderer types
 pub trait RendererProxy: Send {
@@ -62,12 +57,16 @@ impl<R: Renderer> RendererProxy for R {
         snapshot: &dyn StateSnapshot,
         context: &mut dyn RenderContext,
     ) -> Result<(), RenderError> {
+        // render_state_erased(self, snapshot, context)
         let typed_snapshot = snapshot
             .as_any()
             .downcast_ref::<R::StateSnapshot>()
             .ok_or_else(|| RenderError::IncompatibleState(R::StateSnapshot::snapshot_type_id()))?;
-        //FIXME: NO CHECKING ON THE TYPE ID YET !!
-        //
+        //FIXME: get a debug repr of context type tag
+        let expected = TypeId::of::<<R::Context<'_> as HasContextTag>::Tag>();
+        if context.tag_id() != expected {
+            return Err(RenderError::IncompatibleContext("context"));
+        }
         let ptr = context.as_ptr() as *mut R::Context<'_>;
         let typed_context: &mut R::Context<'_> = unsafe { &mut *ptr };
         // let typed_context = context
@@ -81,3 +80,43 @@ impl<R: Renderer> RendererProxy for R {
         Box::new(self.clone())
     }
 }
+// he
+// // //
+// /// Implements the [`RenderContext`] trait, and links a context type
+// /// with a unique `'static` tag type used for safe downcasting.
+// ///
+// /// # Example
+// /// ```
+// /// use mycrate::{RenderContext, impl_render_context};
+// ///
+// /// pub struct MyUi;
+// ///
+// /// pub struct MyContext<'a> {
+// ///     pub ui: &'a mut MyUi,
+// /// }
+// ///
+// /// // This generates:
+// /// // - a zero-sized type `MyContextTag`
+// /// // - `impl RenderContext for MyContext<'a>`
+// /// // - a private link for type-based downcasting
+// /// impl_render_context!(MyContext<'a> => MyContextTag);
+// /// ```
+// #[macro_export]
+// macro_rules! impl_render_context {
+//     ($ctx:ty => $tag:ident) => {
+//         pub struct $tag;
+//
+//         impl $crate::core::render::context::RenderContext for $ctx {
+//             fn tag_id(&self) -> ::std::any::TypeId {
+//                 ::std::any::TypeId::of::<$tag>()
+//             }
+//         }
+//
+//         impl $crate::core::render::HasContextTag for $ctx {
+//             type Tag = $tag;
+//         }
+//     };
+// }
+
+// struct A;
+// impl_render_context!(A => Atype);

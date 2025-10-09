@@ -2,14 +2,14 @@
 // RENDERER REGISTRY
 // ============================================================================
 
+use std::any::TypeId;
 use std::collections::HashMap;
 
 use super::RendererProxy;
-use crate::core::render::context::RenderContext;
-use crate::core::render::Renderer;
 use crate::core::state::snapshot::StateSnapshot;
 use crate::core::state::StateInfo;
 pub use crate::domains::DomainRegistry;
+use crate::{HasContextTag, Renderer};
 // Registry for managing available renderers
 pub struct RendererRegistry {
     renderers: HashMap<RendererKey, Vec<Box<dyn RendererProxy>>>,
@@ -21,14 +21,14 @@ impl RendererRegistry {
             renderers: HashMap::new(),
         }
     }
-
+    // TODO: if possibly, simplify this type syntax. TypeId::of<type> is very wordy
     pub fn register_renderer<R>(&mut self, renderer: R)
     where
         R: Renderer + 'static,
     {
         let key = RendererKey::new(
             R::StateSnapshot::snapshot_type_id(),
-            R::Context::context_type_id(),
+            TypeId::of::<<<R as Renderer>::Context<'_> as HasContextTag>::Tag>(),
         );
         self.renderers
             .entry(key)
@@ -39,7 +39,7 @@ impl RendererRegistry {
     pub fn get_renderers(
         &self,
         snapshot_type: &str,
-        context_type: &str,
+        context_type: TypeId,
     ) -> Option<&Vec<Box<dyn RendererProxy>>> {
         let key = RendererKey::new(snapshot_type, context_type);
         self.renderers.get(&key)
@@ -47,7 +47,7 @@ impl RendererRegistry {
     pub fn get_renderers_id(
         &self,
         state_type: &str,
-        context_type: &str,
+        context_type: TypeId,
     ) -> Option<Vec<&'static str>> {
         let renderers = self.get_renderers(state_type, context_type)?;
         Some(
@@ -60,7 +60,7 @@ impl RendererRegistry {
     pub fn get_first_renderer(
         &self,
         state_type: &str,
-        context_type: &str,
+        context_type: TypeId,
     ) -> Option<&dyn RendererProxy> {
         self.get_renderers(state_type, context_type)?
             .first()
@@ -77,14 +77,14 @@ impl Default for RendererRegistry {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RendererKey {
     pub snapshot_type: String,
-    pub context_type: String,
+    pub context_type: TypeId,
 }
 
 impl RendererKey {
-    pub fn new(snapshot_type: &str, context_type: &str) -> Self {
+    pub fn new(snapshot_type: &str, context_type: TypeId) -> Self {
         Self {
             snapshot_type: snapshot_type.to_string(),
-            context_type: context_type.to_string(),
+            context_type,
         }
     }
 }

@@ -26,10 +26,10 @@ impl StepAction for TextStep {
         "text_step"
     }
 
-    fn get_type_id(&self) -> &'static str {
-        Self::type_id()
-    }
-
+    // fn get_type_id(&self) -> &'static str {
+    //     Self::type_id()
+    // }
+    //
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -87,10 +87,6 @@ impl StepAction for TextGridStep {
     where
         Self: Sized,
     {
-        todo!()
-    }
-
-    fn get_type_id(&self) -> &'static str {
         todo!()
     }
 

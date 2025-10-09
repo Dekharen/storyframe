@@ -3,7 +3,6 @@ use crate::{
     error::ParseError,
 };
 
-pub mod register_domains;
 pub mod text;
 
 #[derive(Debug, Clone)]
@@ -71,10 +70,10 @@ impl StepAction for TestStep {
         "test_step"
     }
 
-    fn get_type_id(&self) -> &'static str {
-        "test_step"
-    }
-
+    // fn get_type_id(&self) -> &'static str {
+    //     "test_step"
+    // }
+    //
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

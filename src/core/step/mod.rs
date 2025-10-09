@@ -16,9 +16,9 @@ where
     where
         Self: Sized;
 
-    /// Instance method to get type_id for trait objects
-    fn get_type_id(&self) -> &'static str;
-
+    ///// Instance method to get type_id for trait objects
+    //fn get_type_id(&self) -> &'static str;
+    //
     /// For downcasting in renderers
     fn as_any(&self) -> &dyn Any;
 
