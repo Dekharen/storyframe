@@ -24,7 +24,7 @@ impl RendererRegistry {
     // TODO: if possibly, simplify this type syntax. TypeId::of<type> is very wordy
     pub fn register_renderer<R>(&mut self, renderer: R)
     where
-        R: Renderer + 'static,
+        R: Renderer + Sync + 'static,
     {
         let key = RendererKey::new(
             R::StateSnapshot::snapshot_type_id(),
