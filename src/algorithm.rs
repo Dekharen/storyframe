@@ -1,5 +1,6 @@
 use crate::{
     core::{
+        configuration::Configuration,
         input::{processors::parse_puzzle_format, read_source_content},
         state::{StateInfo, StateProxy},
         step::StepAction,
@@ -16,6 +17,7 @@ pub struct Metadata {
     pub description: Option<String>,
     pub author: Option<String>,
     pub difficulty: Option<u8>,
+    // pub configuration: Configuration,
 }
 
 #[derive(Debug)]
@@ -25,6 +27,7 @@ pub struct RawPartMetadata {
     pub display_name: String,
     pub description: Option<String>,
     pub raw_steps_string: String,
+    pub configuration: Configuration,
     // this is maybe the wrong type, as in it should already be
     // transformed into a step-related state but we'll see. Like, maybe a Box<dyn VisualizationState>
     // that is the initial state
@@ -43,6 +46,7 @@ pub fn parse_part_info(
         display_name: part.display_name,
         description: part.description,
         input_data: part.input_data,
+        configuration: part.configuration,
     })
 }
 
@@ -52,6 +56,7 @@ pub struct PartInfo {
     pub id: String,
     pub display_name: String,
     pub description: Option<String>,
+    pub configuration: Configuration,
     pub(crate) steps: Vec<Box<dyn StepAction>>,
     // this is maybe the wrong type, but for different reasons than before, because we might need
     // some type markings to make sure a single string type can transfer to multiple types of
@@ -73,8 +78,12 @@ pub(crate) struct State {
     pub info: StateInfo,
 }
 impl State {
-    pub(crate) fn reset(&mut self, raw_state_input: &str) -> Result<(), ParseError> {
-        self.inner = (self.info.factory)(raw_state_input)?;
+    pub(crate) fn reset(
+        &mut self,
+        raw_state_input: &str,
+        configuration: &Configuration,
+    ) -> Result<(), ParseError> {
+        self.inner = (self.info.factory)(raw_state_input, configuration)?;
         Ok(())
     }
 }
@@ -111,7 +120,7 @@ impl AlgorithmInstance {
     {
         let raw_content = read_source_content(source)?;
         let (metadata, parts) = parse_puzzle_format(&raw_content)?;
-        let mut parsed_parts = Vec::new();
+        let mut parsed_parts = Vec::with_capacity(parts.len());
         for part in parts.into_iter() {
             parsed_parts.push(parse_part_info(part, registry)?);
         }
