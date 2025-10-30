@@ -3,10 +3,12 @@
 ///
 /// # Example
 /// ```
-/// use mylib::impl_render_context;
+/// use storyframe::impl_render_context;
+///
+///struct Ui;
 ///
 /// struct EguiContext<'a> {
-///     ui: &'a mut egui::Ui,
+///     ui: &'a mut Ui,
 /// }
 ///
 /// impl_render_context!(EguiContext<'_> => EguiContextTag);
@@ -52,23 +54,26 @@ macro_rules! register_domain_types {
         $step_type:ty {
 
             aliases: [$($alias:literal),*],
-            states: [$($state_type:ty ),*]
+            // states: [$($state_type:ty ),*]
+            states: [$(
+                $state_type:ty $({ required: [$($req:literal),*] })?
+            ),*]
         }
     ),*) =>{
         // Compile-time trait bound checks
-        const _: () = {
-            $(
-                // Force compile error if $step_type doesn't implement StepAction
-                fn _assert_step_action<T: $crate::core::step::StepAction>() {}
-                let _ = _assert_step_action::<$step_type>;
+$(
+    const _: () = {
+        fn _assert_step_action<T: $crate::core::step::StepAction>() {}
+        let _ = _assert_step_action::<$step_type>;
+    };
 
-                $(
-                    // Force compile error if $state_type doesn't implement VisualizationState
-                    fn _assert_state<T: $crate::core::state::VisualizationState>() {}
-                    let _ = _assert_state::<$state_type>;
-                )*
-            )*
+    $(
+        const _: () = {
+            fn _assert_state<T: $crate::core::state::VisualizationState>() {}
+            let _ = _assert_state::<$state_type>;
         };
+    )*
+)*
   lazy_static::lazy_static! {
             static ref STEP_TYPE_MAPPINGS: std::collections::HashMap<&'static str, (&'static str, $crate::core::input::processors::StepParserFn )> = {
                 let mut map = std::collections::HashMap::new();
@@ -102,7 +107,8 @@ macro_rules! register_domain_types {
                     type_id: <$state_type>::state_type_id(),
                     display_name: stringify!($state_type),
                     snapshot_type_id: <$state_type>::snapshot_type_id(),
-                    factory: |input| Ok(Box::new(<$state_type>::parse(input)?)),
+                    factory: |input, configuration| Ok(Box::new(<$state_type>::parse(input, configuration)?)),
+                    required_config_fields: &[$($($req),*)?],
                     is_default: false, // Will be set below
                 },
             )*

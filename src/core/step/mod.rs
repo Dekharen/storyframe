@@ -7,7 +7,7 @@ use std::fmt::Debug;
 
 use crate::error::ParseError;
 /// Represents a single modification that can be applied to visualization state
-pub trait StepAction: Send + 'static
+pub trait StepAction: Send + Sync + 'static
 where
     Self: Debug,
 {

@@ -3,6 +3,7 @@ use crate::{
     error::ParseError,
 };
 
+pub mod grids;
 pub mod text;
 
 #[derive(Debug, Clone)]
@@ -60,35 +61,16 @@ fn parse_steps_with_parser(
     Ok(steps)
 }
 
-#[derive(Debug)]
-struct TestStep;
-impl StepAction for TestStep {
-    fn type_id() -> &'static str
-    where
-        Self: Sized,
-    {
-        "test_step"
-    }
-
-    // fn get_type_id(&self) -> &'static str {
-    //     "test_step"
-    // }
-    //
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn from_str(_string: &str) -> Result<Self, ParseError>
-    where
-        Self: Sized,
-    {
-        Ok(Self)
-    }
-}
 crate::register_domain_types!(
     text::TextStep {
         aliases: ["text", "text_step"],
         states: [text::state::TextState] // default_state: TextState
+    },
+    grids::simple_grid::SimpleF32GridStep {
+        aliases: ["grid", "matrix"],
+        states: [grids::simple_grid::state::SimpleGridState {
+            required: ["columns", "rows"]
+        }]
     } // GraphStep { aliases: ["graph", "tree"] },
       // GridStep { aliases: ["grid", "matrix"] }
 );

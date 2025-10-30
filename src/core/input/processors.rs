@@ -1,12 +1,12 @@
 // use std::str::pattern::Pattern;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    algorithm::{Metadata, RawPartMetadata},
     // domains::step_type_to_id,
-    core::step::StepAction,
+    core::{configuration::Configuration, step::StepAction},
     error::ParseError,
-    puzzle::{Metadata, RawPartMetadata},
 };
 
 pub type StepParserFn = fn(&str) -> Result<Box<dyn StepAction>, ParseError>;
@@ -78,8 +78,9 @@ pub fn parse_puzzle_format(content: &str) -> Result<(Metadata, Vec<RawPartMetada
 
     // Extract structured data
     let metadata = extract_metadata(&root)?;
-    let parts = extract_parts_with_steps(&root)?;
-
+    let configuration = Arc::new(extract_config(&root, None));
+    let parts = extract_parts_with_steps(&root, &configuration)?;
+    // TODO: store the config, maybe on the metadata, or add it as return
     Ok((metadata, parts))
 }
 
@@ -100,12 +101,16 @@ fn extract_metadata(root: &Field) -> Result<Metadata, ParseError> {
 
     Ok(metadata)
 }
-fn extract_parts_with_steps(root: &Field) -> Result<Vec<RawPartMetadata>, ParseError> {
+fn extract_parts_with_steps(
+    root: &Field,
+    parent_config: &Arc<Configuration>,
+) -> Result<Vec<RawPartMetadata>, ParseError> {
     let mut parts = Vec::new();
 
     if let Some(Field::Node(part_map)) = root.get_path(&["part"]) {
         for (part_id, part_field) in part_map {
-            let part_metadata = extract_single_part_with_steps(part_id, part_field)?;
+            let part_metadata =
+                extract_single_part_with_steps(part_id, part_field, &parent_config)?;
 
             parts.push(part_metadata);
         }
@@ -114,9 +119,17 @@ fn extract_parts_with_steps(root: &Field) -> Result<Vec<RawPartMetadata>, ParseE
     Ok(parts)
 }
 
+fn extract_config(root: &Field, parent: Option<Arc<Configuration>>) -> Configuration {
+    if let Some(Field::Node(configuration)) = root.get_path(&["config"]) {
+        return Configuration::with_parent(configuration.clone(), parent);
+    }
+    Configuration::with_parent(HashMap::new(), parent)
+}
+
 fn extract_single_part_with_steps(
     part_id: &str,
     part_field: &Field,
+    parent_config: &Arc<Configuration>,
 ) -> Result<RawPartMetadata, ParseError> {
     let Field::Node(fields) = part_field else {
         return Err(ParseError::InvalidPartStructure(part_id.to_string()));
@@ -142,11 +155,13 @@ fn extract_single_part_with_steps(
         .get("steps")
         .and_then(|f| f.as_leaf())
         .ok_or_else(|| ParseError::MissingPartField(part_id.to_string(), "steps"))?;
+    let configuration = extract_config(part_field, Some(parent_config.clone()));
 
     // Create PartInfo without steps (they'll be parsed later with proper input context)
     let part_metadata = RawPartMetadata {
         id: part_id.to_string(),
         display_name: name.to_string(),
+        configuration,
         description: fields
             .get("description")
             .and_then(|f| f.as_leaf())

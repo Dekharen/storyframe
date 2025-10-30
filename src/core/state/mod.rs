@@ -1,5 +1,5 @@
 use crate::{
-    core::step::StepAction,
+    core::{configuration::Configuration, step::StepAction},
     error::{ParseError, StepError},
 };
 use snapshot::StateSnapshot;
@@ -41,12 +41,12 @@ where
     {
         Self::Snapshot::snapshot_type_id()
     }
-    fn parse(input: &str) -> Result<Self, ParseError>
+    fn parse(input: &str, configuration: &Configuration) -> Result<Self, ParseError>
     where
         Self: Sized;
 }
 
-pub trait StateProxy: Send + 'static
+pub trait StateProxy: Send + Sync + 'static
 where
     Self: Debug,
 {
@@ -64,7 +64,7 @@ where
     fn create_snapshot_erased(&self) -> Box<dyn StateSnapshot>;
 }
 
-impl<S: VisualizationState> StateProxy for S {
+impl<S: VisualizationState + Sync> StateProxy for S {
     fn apply_step_erased(&mut self, step: &dyn StepAction) -> Result<(), StepError> {
         let typed_step = step
             .as_any()
@@ -97,12 +97,13 @@ impl<S: VisualizationState> StateProxy for S {
     }
 }
 
-pub type StateFactoryFn = fn(&str) -> Result<Box<dyn StateProxy>, ParseError>;
+pub type StateFactoryFn = fn(&str, &Configuration) -> Result<Box<dyn StateProxy>, ParseError>;
 #[derive(Clone, Debug)]
 pub struct StateInfo {
     pub type_id: &'static str,
     pub display_name: &'static str,
     pub snapshot_type_id: &'static str,
     pub factory: StateFactoryFn,
+    pub required_config_fields: &'static [&'static str],
     pub is_default: bool,
 }

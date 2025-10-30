@@ -24,7 +24,7 @@ pub trait Renderer: Send + Clone + 'static {
     fn renderer_name(&self) -> RendererId;
 }
 /// Type-erased wrapper for storing different renderer types
-pub trait RendererProxy: Send {
+pub trait RendererProxy: Send + Sync {
     fn state_type_id(&self) -> StateId;
     fn renderer_name(&self) -> RendererId;
     // fn supports_state_type(&self, state_type: &str) -> bool;
@@ -39,7 +39,7 @@ pub trait RendererProxy: Send {
 }
 
 /// Blanket implementation to convert any Renderer of T into RendererProxy
-impl<R: Renderer> RendererProxy for R {
+impl<R: Renderer + Sync> RendererProxy for R {
     fn state_type_id(&self) -> StateId {
         R::StateSnapshot::snapshot_type_id()
     }

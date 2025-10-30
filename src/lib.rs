@@ -1,19 +1,21 @@
 pub mod core {
+    pub mod configuration;
     pub mod id;
     pub mod input;
     pub mod render;
+    pub mod split;
     pub mod state;
     pub mod step;
 }
+pub mod algorithm;
 pub mod domains;
 pub mod engine;
 pub mod error;
 pub mod macros;
-pub mod puzzle;
 pub use core::{
     render::{
-        context::{HasContextTag, RenderContext},
         Renderer,
+        context::{HasContextTag, RenderContext},
     },
     step::StepAction,
 };

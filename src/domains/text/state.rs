@@ -1,4 +1,7 @@
-use crate::core::state::{snapshot::StateSnapshot, VisualizationState};
+use crate::core::{
+    configuration::Configuration,
+    state::{VisualizationState, snapshot::StateSnapshot},
+};
 use std::ops::Deref;
 
 #[derive(Debug, Clone)]
@@ -42,30 +45,25 @@ impl VisualizationState for TextState {
     // This is reasonable... Creating duplicate states isn't really an issue.
     // But I like the cross-referencing...
     fn apply_step(&mut self, step: &Self::Step) -> Result<(), crate::error::StepError> {
-        use crate::core::step::StepAction;
-        if let Some(text_step) = step.as_any().downcast_ref::<super::TextStep>() {
-            if text_step.position >= self.content.len() {
-                //TODO: this could maybe be done right after parsing for each step.
-                //But some step types might only be able to validate based on the state - so
-                //We either trust the input entirely, or we should make InvalidPosition a more
-                //general error.
+        if step.position >= self.content.len() {
+            //TODO: this could maybe be done right after parsing for each step.
+            //But some step types might only be able to validate based on the state - so
+            //We either trust the input entirely, or we should make InvalidPosition a more
+            //general error.
 
-                return Err(crate::error::StepError::InvalidPosition(text_step.position));
-            }
-            let representation = &mut self.content[text_step.position];
-            if let Some(content) = text_step.content.clone() {
-                representation.content = content;
-            }
-            if let Some(color) = text_step.background_color.clone() {
-                representation.background_color = Some(color);
-            }
-            if let Some(color) = text_step.foreground_color.clone() {
-                representation.foreground_color = Some(color);
-            }
-            Ok(())
-        } else {
-            panic!("Incompatible step type provided to TextState: expected TextStep");
+            return Err(crate::error::StepError::InvalidPosition(step.position));
         }
+        let representation = &mut self.content[step.position];
+        if let Some(content) = step.content.clone() {
+            representation.content = content;
+        }
+        if let Some(color) = step.background_color.clone() {
+            representation.background_color = Some(color);
+        }
+        if let Some(color) = step.foreground_color.clone() {
+            representation.foreground_color = Some(color);
+        }
+        Ok(())
     }
 
     fn seek_to_step(
@@ -85,7 +83,8 @@ impl VisualizationState for TextState {
         "text_state"
     }
 
-    fn parse(input: &str) -> Result<Self, crate::error::ParseError>
+    //TODO: Could implement a configuration for bg/fg color
+    fn parse(input: &str, _configuration: &Configuration) -> Result<Self, crate::error::ParseError>
     where
         Self: Sized,
     {

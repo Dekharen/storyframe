@@ -6,6 +6,7 @@ use std::{fmt, string::FromUtf8Error};
 
 #[derive(Debug)]
 pub enum ParseError {
+    RequiredConfigField(String),
     InvalidFormat(String),
     IoError(std::io::Error),
     FromUtf8Error(FromUtf8Error),
@@ -27,6 +28,9 @@ pub enum ParseError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ParseError::RequiredConfigField(field) => {
+                write!(f, "Required configuration field '{field}' is missing")
+            }
             ParseError::ConflictingFieldTypes {
                 path,
                 existing_type,

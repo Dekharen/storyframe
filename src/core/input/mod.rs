@@ -1,5 +1,5 @@
+use crate::algorithm::PuzzleSource;
 use crate::error::ParseError;
-use crate::puzzle::PuzzleSource;
 
 pub mod processors;
 // ============================================================================

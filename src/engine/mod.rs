@@ -7,10 +7,10 @@ pub mod selectors;
 use std::{any::TypeId, marker::PhantomData};
 
 use crate::{
+    HasContextTag, RenderContext,
+    algorithm::{AlgorithmInstance, Current, Metadata, PartInfo, PuzzleSource},
     core::{render::RendererProxy, state::StateInfo},
     error::{ParseError, VisualizationError},
-    puzzle::{AlgorithmInstance, Current, Metadata, PartInfo, PuzzleSource},
-    HasContextTag, RenderContext,
 };
 use registry::Registry;
 use selectors::{PartSelector, RendererSelector, StateSelector};
@@ -57,8 +57,8 @@ impl VisualizationEngine {
     }
 
     pub fn configure_for_current_context<C: RenderContext + HasContextTag + 'static>(
-        &mut self,
-    ) -> ContextConfiguration<C> {
+        &'_ mut self,
+    ) -> ContextConfiguration<'_, C> {
         ContextConfiguration {
             engine: self,
             context_type: TypeId::of::<C::Tag>(),
@@ -68,7 +68,7 @@ impl VisualizationEngine {
 
     pub fn register_renderer<R>(&mut self, renderer: R)
     where
-        R: crate::core::render::Renderer,
+        R: crate::core::render::Renderer + Sync,
     {
         self.registry
             .renderer_registry_mut()
@@ -211,13 +211,11 @@ impl VisualizationEngine {
             .state
             .as_mut()
             .ok_or(VisualizationError::MissingState)?;
+        let part = current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)?;
         state
-            .reset(
-                &current
-                    .current_part(&puzzle.parts)
-                    .ok_or(VisualizationError::NoPartLoaded)?
-                    .input_data,
-            )
+            .reset(&part.input_data, &part.configuration)
             .ok()
             .ok_or(VisualizationError::MissingState)?;
         current.step = 0;
@@ -400,10 +398,10 @@ impl<C: RenderContext + 'static> ContextConfiguration<'_, C> {
         let selected_state: StateInfo = selection
             .resolve_selection()
             .ok_or(VisualizationError::NoRendererSelected)?;
-        let state = (selected_state.factory)(&part.input_data)
+        let state = (selected_state.factory)(&part.input_data, &part.configuration)
             .ok()
             .ok_or(VisualizationError::NoRendererSelected)?; //FIXME:
-        puzzle.state = Some(crate::puzzle::State {
+        puzzle.state = Some(crate::algorithm::State {
             inner: state,
             info: selected_state,
         });

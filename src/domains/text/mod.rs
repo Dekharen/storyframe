@@ -10,14 +10,6 @@ pub struct TextStep {
     // effect : italic/bold ?
 }
 
-#[derive(Debug)]
-pub struct TextGridStep {
-    position: [usize; 2],
-    content: Option<String>,
-    background_color: Option<String>,
-    foreground_color: Option<String>,
-}
-
 impl StepAction for TextStep {
     fn type_id() -> &'static str
     where
@@ -79,25 +71,5 @@ impl StepAction for TextStep {
             background_color: bg,
             foreground_color: fg,
         })
-    }
-}
-
-impl StepAction for TextGridStep {
-    fn type_id() -> &'static str
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn from_str(string: &str) -> Result<Self, crate::error::ParseError>
-    where
-        Self: Sized,
-    {
-        todo!()
     }
 }

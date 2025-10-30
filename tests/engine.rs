@@ -1,10 +1,13 @@
 use storyframe::{
-    core::state::{snapshot::StateSnapshot, VisualizationState},
+    StepAction,
+    algorithm::PuzzleSource,
+    core::{
+        configuration::Configuration,
+        state::{VisualizationState, snapshot::StateSnapshot},
+    },
     engine::VisualizationEngine,
     error::ParseError,
-    impl_render_context,
-    puzzle::PuzzleSource,
-    register_domain_types, StepAction,
+    impl_render_context, register_domain_types,
 };
 
 struct Ctx;
@@ -205,7 +208,7 @@ impl VisualizationState for TestState {
         "test_state"
     }
 
-    fn parse(_input: &str) -> Result<Self, ParseError>
+    fn parse(_input: &str, _configuration: &Configuration) -> Result<Self, ParseError>
     where
         Self: Sized,
     {

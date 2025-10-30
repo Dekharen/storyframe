@@ -1,6 +1,6 @@
 use crate::{
+    algorithm::PartInfo,
     core::{render::RendererProxy, state::StateInfo},
-    puzzle::PartInfo,
 };
 
 use super::registry::StateRegistry;
