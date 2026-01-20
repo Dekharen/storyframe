@@ -10,7 +10,7 @@ use crate::{
 };
 use std::path::PathBuf;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 /// Metadata about a puzzle and its parts
 pub struct Metadata {
     pub title: String,

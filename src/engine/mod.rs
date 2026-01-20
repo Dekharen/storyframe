@@ -14,13 +14,12 @@ use crate::{
 };
 use registry::Registry;
 use selectors::{PartSelector, RendererSelector, StateSelector};
+// #[derive(Debug, Clone, Eq, PartialEq)]
 /// Manages renderers and coordinates visualization
 pub struct VisualizationEngine {
-    puzzle: Option<AlgorithmInstance>,
+    algorithm: Option<AlgorithmInstance>,
     active_renderer: Option<Box<dyn RendererProxy>>,
     registry: Registry,
-    // registry: RendererRegistry,
-    // domain_registry: DomainRegistry,
 }
 
 impl VisualizationEngine {
@@ -37,7 +36,7 @@ impl VisualizationEngine {
         Self {
             registry,
             // registry: RendererRegistry::new(),
-            puzzle: None,
+            algorithm: None,
             active_renderer: None,
         }
     }
@@ -51,7 +50,7 @@ impl VisualizationEngine {
     }
     fn load_puzzle_from_source(&mut self, source: PuzzleSource) -> Result<(), ParseError> {
         let puzzle = AlgorithmInstance::from_source(source, self.registry.domain_registry())?;
-        self.puzzle = Some(puzzle);
+        self.algorithm = Some(puzzle);
         // TODO: Set up initial current state...
         Ok(())
     }
@@ -75,16 +74,32 @@ impl VisualizationEngine {
             .register_renderer(renderer)
     }
 
+    /// Returns the current part if available; otherwise, returns an error on whether
+    /// there are no algorithms available, or no parts selected within that algorithm.
+    pub fn current_part(&self) -> Result<&PartInfo, VisualizationError> {
+        let puzzle = self
+            .algorithm
+            .as_ref()
+            .ok_or(VisualizationError::NoPuzzleLoaded)?;
+        let current = puzzle
+            .current
+            .as_ref()
+            .ok_or(VisualizationError::NoPartLoaded)?;
+        current
+            .current_part(&puzzle.parts)
+            .ok_or(VisualizationError::NoPartLoaded)
+    }
+
     pub fn get_parts(&self) -> Result<&[PartInfo], VisualizationError> {
         Ok(&self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?
             .parts)
     }
     pub fn get_metadata(&self) -> Result<Metadata, VisualizationError> {
         let metadata = self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?
             .metadata
@@ -97,7 +112,7 @@ impl VisualizationEngine {
     ) -> Result<(), VisualizationError> {
         let mut selector = PartSelector::from_parts(
             &self
-                .puzzle
+                .algorithm
                 .as_ref()
                 .ok_or(VisualizationError::NoPuzzleLoaded)?
                 .parts,
@@ -106,12 +121,12 @@ impl VisualizationEngine {
         let select = selector
             .resolve_selection()
             .ok_or(VisualizationError::NoPartLoaded)?;
-        self.puzzle.as_mut().unwrap().current = Some(Current {
+        self.algorithm.as_mut().unwrap().current = Some(Current {
             step: 0,
             part_id: select.id.clone(),
         });
         self.active_renderer = None;
-        self.puzzle.as_mut().unwrap().state = None;
+        self.algorithm.as_mut().unwrap().state = None;
         Ok(())
     }
     // ============================================================================
@@ -120,7 +135,7 @@ impl VisualizationEngine {
     /// Execute the next step in the sequence
     pub fn next_step(&mut self) -> Result<(), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -147,7 +162,7 @@ impl VisualizationEngine {
     /// Go back one step (may require replaying from beginning)
     pub fn previous_step(&mut self) -> Result<(), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -174,7 +189,7 @@ impl VisualizationEngine {
     /// Jump directly to a specific step
     pub fn goto_step(&mut self, step_index: usize) -> Result<(), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let state = puzzle
@@ -200,7 +215,7 @@ impl VisualizationEngine {
     /// Reset to the beginning
     pub fn reset(&mut self) -> Result<(), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -237,7 +252,7 @@ impl VisualizationEngine {
     /// Check if we can step forward
     pub fn can_step_forward(&self) -> Result<bool, VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -253,7 +268,7 @@ impl VisualizationEngine {
     /// Check if we can step backward
     pub fn can_step_backward(&self) -> Result<bool, VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -267,7 +282,7 @@ impl VisualizationEngine {
     /// Get current step information
     pub fn current_step_info(&self) -> Result<(usize, usize), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle
@@ -296,7 +311,7 @@ impl VisualizationEngine {
     /// Load a puzzle and ensure renderer compatibility
     pub fn load_puzzle(&mut self, puzzle: AlgorithmInstance) {
         self.active_renderer = None;
-        self.puzzle = Some(puzzle);
+        self.algorithm = Some(puzzle);
     }
 
     // ============================================================================
@@ -306,7 +321,7 @@ impl VisualizationEngine {
     /// Render current step and state
     pub fn render(&mut self, context: &mut dyn RenderContext) -> Result<(), VisualizationError> {
         let puzzle = self
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let renderer = self
@@ -342,7 +357,7 @@ impl<C: RenderContext + 'static> ContextConfiguration<'_, C> {
     ) -> Result<(), VisualizationError> {
         let puzzle = self
             .engine
-            .puzzle
+            .algorithm
             .as_ref()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         //FIXME: Wrong error type
@@ -377,7 +392,7 @@ impl<C: RenderContext + 'static> ContextConfiguration<'_, C> {
     ) -> Result<(), VisualizationError> {
         let puzzle = self
             .engine
-            .puzzle
+            .algorithm
             .as_mut()
             .ok_or(VisualizationError::NoPuzzleLoaded)?;
         let current = puzzle

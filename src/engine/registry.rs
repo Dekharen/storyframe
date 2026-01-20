@@ -6,8 +6,8 @@ use std::any::TypeId;
 use std::collections::HashMap;
 
 use super::RendererProxy;
-use crate::core::state::snapshot::StateSnapshot;
 use crate::core::state::StateInfo;
+use crate::core::state::snapshot::StateSnapshot;
 pub use crate::domains::DomainRegistry;
 use crate::{HasContextTag, Renderer};
 // Registry for managing available renderers
